@@ -65,13 +65,12 @@ const Lua = struct {
 
 
 pub extern fn luaPrint(state: ?LuaState) c_int {
-    var l = Lua.init(state);
-    const top = l.getTop();
+    var lua = Lua.init(state);
+    const top = lua.getTop();
     var i = top - top + 1;
     while (i <= top) : (i += 1) {
-        if (l.getString(i)) |cstr| {
-            const s = str(cstr);
-            std.debug.warn("{}\n", s);
+        if (lua.getString(i)) |cstr| {
+            std.debug.warn("{}\n", str(cstr));
         }
     }
     return 0;
@@ -84,5 +83,7 @@ pub fn main() anyerror!void {
 
     lua.registerGlobalFunc(c"print", luaPrint);
 
-    lua.eval(c"print('Hello from luajit', 1, 2, 'test')") catch unreachable;
+    lua.eval(c"print('Hello from luajit', 1, 2, 'test')") catch {
+        std.debug.warn("Error when executing Lua code");
+    };
 }
