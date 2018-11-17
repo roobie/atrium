@@ -1,69 +1,88 @@
 const std = @import("std");
+const mem = std.mem;
 
 const c = @cImport({
-    @cInclude("libguile.h");
+    @cInclude("lua.h");
+    @cInclude("lualib.h");
+    @cInclude("lauxlib.h");
+    @cInclude("luajit.h");
 });
 
+const LuaState = *c.struct_lua_State;
+const String = []const u8;
+const CString = [*]const u8;
+const LuaFunction = extern fn(?LuaState) c_int;
 
-
-pub extern fn t(cdata: ?*c_void) ?*c_void {
-    return cdata;
-}
-fn getGuileCallback(comptime T: type, comptime Y: type,
-                    f: fn(T) Y) extern fn (?*c_void) ?*c_void {
-    const container = struct {
-        pub extern fn callback(cdata: ?*c_void) ?*c_void {
-            const inp: T = @ptrCast(T,  cdata);
-            return f(inp);
-        }
-    };
-
-    return container.callback;
+fn str(cstr: CString) String {
+    return mem.toSliceConst(u8, cstr);
 }
 
-const Guile = struct {
-    extern fn shellMain(data: ?*c_void, argc: c_int, argv: ?[*]?[*]u8) noreturn {
-        c.scm_shell(0, null);
-        unreachable;
+const Lua = struct {
+    state: LuaState,
+
+    // LUA_API lua_State *(lua_newstate) (lua_Alloc f, void *ud);
+    // #define lua_open()	luaL_newstate()
+    pub fn init(aState: ?LuaState) Lua {
+        return Lua {
+            .state = aState orelse c.luaL_newstate() orelse unreachable,
+        };
     }
 
-    pub fn shell() noreturn {
-        c.scm_boot_guile(0, null, shellMain, null);
-        unreachable;
+    pub fn openLibs(self: *Lua) void {
+        c.luaL_openlibs(self.state);
     }
 
-    pub fn init() void {
-        c.scm_init_guile();
+    // #define lua_register(L,n,f) (lua_pushcfunction(L, (f)), lua_setglobal(L, (n)))
+    // #define lua_pushcfunction(L,f)	lua_pushcclosure(L, (f), 0)
+    // #define lua_setglobal(L,s)	lua_setfield(L, LUA_GLOBALSINDEX, (s))
+    pub fn registerGlobalFunc(self: *Lua, name: CString, func: LuaFunction) void {
+        c.lua_pushcclosure(self.state, func, 0);
+        c.lua_setfield(self.state, c.LUA_GLOBALSINDEX, name);
     }
 
-    pub fn with(f: extern fn (?*c_void) ?*c_void, data: ?*c_void) ?*c_void {
-        return c.scm_with_guile(f, data);
+    fn check(res: c_int) !void {
+        if (res > 0) return error.BadValue;
     }
 
-    pub fn without(f: extern fn (?*c_void) ?*c_void, data: ?*c_void) ?*c_void {
-        return c.scm_without_guile(f, data);
+    // #define luaL_dostring(L, s)\
+    // (luaL_loadstring(L, s) || lua_pcall(L, 0, LUA_MULTRET, 0))
+    pub fn eval(self: *Lua, code: CString) !void {
+        Lua.check(c.luaL_loadstring(self.state, code)) catch {
+            _ = luaPrint(self.state);
+        };
+        try Lua.check(c.lua_pcall(self.state, 0, c.LUA_MULTRET, 0));
     }
 
-    pub fn eqP(x: c.SCM, y: c.SCM) bool {
-        return c.scm_eq_p(x, y);
+    pub fn getTop(self: *Lua) u32 {
+        return @bitCast(u32, c.lua_gettop(self.state));
+    }
+
+    // #define lua_tostring(L,i)	lua_tolstring(L, (i), NULL)
+    pub fn getString(self: *Lua, index: u32) ?CString {
+        return c.lua_tolstring(self.state, @bitCast(c_int, index), null);
     }
 };
 
-pub extern fn callGuile(data: ?*c_void) ?*c_void {
-    return data;
+
+pub extern fn luaPrint(state: ?LuaState) c_int {
+    var l = Lua.init(state);
+    const top = l.getTop();
+    var i = top - top + 1;
+    while (i <= top) : (i += 1) {
+        if (l.getString(i)) |cstr| {
+            const s = str(cstr);
+            std.debug.warn("{}\n", s);
+        }
+    }
+    return 0;
 }
 
-pub extern fn inGuile(data: ?*c_void) ?*c_void {
-    var exp = @ptrCast(*u8, data.?).*;
-    var v = exp + 1;
-    return @ptrCast(?*c_void, &v);
-}
 
 pub fn main() anyerror!void {
-    std.debug.warn("Uh oh\n");
-    var ivar: u8 = 254;
-    //const a = Guile.c_with(callGuile, &ivar);
-    const b = Guile.with(inGuile, &ivar);
-    std.debug.warn("{}: Uh oh\n", b.?.*);
-    //Guile.shell();
+    var lua = Lua.init(null);
+    lua.openLibs();
+
+    lua.registerGlobalFunc(c"print", luaPrint);
+
+    lua.eval(c"print('Hello from luajit', 1, 2, 'test')") catch unreachable;
 }
