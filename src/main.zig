@@ -1,7 +1,8 @@
 const std = @import("std");
 const mem = std.mem;
-const math = @import("std").math;
-const rand = @import("std").rand;
+const math = std.math;
+const rand = std.rand;
+const ArrayList = std.ArrayList;
 
 const assert = @import("std").debug.assert;
 const warn = @import("std").debug.warn;
@@ -12,6 +13,10 @@ const sdl = @import("sdl.zig");
 const linalg = @import("linalg.zig");
 
 const c = @import("clibs.zig").c;
+
+const GameError = error {
+    EntityCreationError,
+};
 
 const windowWidth = 976;
 const windowHeight = 720;
@@ -34,8 +39,9 @@ const Entity = struct {
     }
 };
 
+const EntityList = ArrayList(Entity);
 const World = struct {
-    entities: []Entity,
+    entities: EntityList,
 };
 
 var e1: Entity = Entity {
@@ -43,23 +49,26 @@ var e1: Entity = Entity {
     .sprite = c.SDL_Rect { .x = 10, .y = 10, .w = 10, .h = 10},
 };
 
-const startEntityCount = 20;
+const startEntityCount = 2;
 
-fn populateEntities(rng: *rand.Xoroshiro128, arr: *[startEntityCount]Entity) void {
+fn makeRandomEntity(rng: *rand.Xoroshiro128, nextId: usize) Entity {
+    return Entity {
+        .id = nextId,
+        .position = linalg.Vec2.make(windowWidth / 2, windowHeight / 2),
+        .dimensions = linalg.Vec2.make(10, 10),
+        .momentum = linalg.Vec2.make(0, 0),
+        .base_color = []u8 {
+            55 + rng.random.uintLessThan(u8, 100),
+            55 + rng.random.uintLessThan(u8, 100),
+            55 + rng.random.uintLessThan(u8, 100),
+            55 + rng.random.uintLessThan(u8, 200),
+        }
+    };
+}
+fn populateEntities(rng: *rand.Xoroshiro128, lst: *EntityList) void {
     var i: usize = 0;
     while (i < startEntityCount) : (i += 1) {
-        arr[i] = Entity {
-            .id = 1,
-            .position = linalg.Vec2.make(windowWidth / 2, windowHeight / 2),
-            .dimensions = linalg.Vec2.make(10, 10),
-            .momentum = linalg.Vec2.make(0, 0),
-            .base_color = []u8 {
-                55 + rng.random.uintLessThan(u8, 100),
-                55 + rng.random.uintLessThan(u8, 100),
-                55 + rng.random.uintLessThan(u8, 100),
-                55 + rng.random.uintLessThan(u8, 200),
-            }
-        };
+        lst.append(makeRandomEntity(rng, i)) catch return ;
     }
 }
 
@@ -82,11 +91,14 @@ pub fn main() anyerror!void {
     const seed = mem.readIntLE(u64, buf[0..8]);
     var rng = rand.DefaultPrng.init(seed);
 
+
     var entities: [startEntityCount]Entity = undefined;
-    populateEntities(&rng, &entities);
-    const world = World {
-        .entities = entities[0..],
+    var allocator = &std.heap.DirectAllocator.init().allocator;
+    var world = World {
+        .entities = EntityList.init(allocator),
     };
+    defer world.entities.deinit();
+    populateEntities(&rng, &world.entities);
     var worldPtr = &world;
 
     sdl.check(c.SDL_Init(c.SDL_INIT_VIDEO|c.SDL_INIT_GAMECONTROLLER)) catch {
@@ -112,22 +124,22 @@ pub fn main() anyerror!void {
     };
     defer c.SDL_DestroyRenderer(renderer);
 
-    const targetFps = 60;
-
     var delay: u32 = 0;
     var delta: u32 = 0;
 
     var fpsMan: c.FPSmanager = undefined;
     var fpsManPtr: ?[*]c.FPSmanager = @ptrCast([*]c.FPSmanager, &fpsMan);
     c.SDL_initFramerate(fpsManPtr);
-    sdl.check(c.SDL_setFramerate(fpsManPtr, 60)) catch {
+    const targetFps: u32 = 120;
+    sdl.check(c.SDL_setFramerate(fpsManPtr, targetFps)) catch {
         return sdl.logFatal(c"Error initializing (set) framerate controller: %s");
     };
 
     var _x: c_int = 0;
     _ = c.SDL_GL_SetAttribute(@bitCast(c.SDL_GLattr, _x + c.SDL_GL_CONTEXT_FLAGS),
                               c.SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
-    _ = c.SDL_GL_SetAttribute(@bitCast(c.SDL_GLattr, _x + c.SDL_GL_CONTEXT_PROFILE_MASK), c.SDL_GL_CONTEXT_PROFILE_CORE);
+    _ = c.SDL_GL_SetAttribute(@bitCast(c.SDL_GLattr, _x + c.SDL_GL_CONTEXT_PROFILE_MASK),
+                              c.SDL_GL_CONTEXT_PROFILE_CORE);
     _ = c.SDL_GL_SetAttribute(@bitCast(c.SDL_GLattr, _x + c.SDL_GL_DOUBLEBUFFER), 1);
     _ = c.SDL_GL_SetAttribute(@bitCast(c.SDL_GLattr, _x + c.SDL_GL_DEPTH_SIZE), 24);
     _ = c.SDL_GL_SetAttribute(@bitCast(c.SDL_GLattr, _x + c.SDL_GL_STENCIL_SIZE), 8);
@@ -163,6 +175,7 @@ pub fn main() anyerror!void {
                         },
                         c.SDLK_w => {
                             warn("DELAY: {} || DELTA: {}\n", delay, delta);
+                            warn("EntityCount: {}\n", worldPtr.*.entities.len);
                         },
                         else => {},
                     }
@@ -176,7 +189,7 @@ pub fn main() anyerror!void {
         _ = c.SDL_RenderClear(renderer);
 
         const factor: linalg.Float = @intToFloat(linalg.Float, delta) / 1000.0;
-        for (worldPtr.*.entities) |*entity, i| {
+        for (worldPtr.*.entities.toSlice()) |*entity, i| {
             var momentum = &entity.*.momentum;
             var position = &entity.*.position;
             var dimensions = &entity.*.dimensions;
@@ -190,9 +203,14 @@ pub fn main() anyerror!void {
                 const yfactor: linalg.Float = if (rng.random.boolean())
                     @intToFloat(linalg.Float, -1) else 1;
                 momentum.x = rng.random.float(linalg.Float) *
-                    @intToFloat(linalg.Float, rng.random.uintLessThan(u8, 2)) * xfactor;
+                    @intToFloat(linalg.Float, rng.random.uintLessThan(u8, 4)) * xfactor;
                 momentum.y = rng.random.float(linalg.Float) *
-                    @intToFloat(linalg.Float, rng.random.uintLessThan(u8, 2)) * yfactor;
+                    @intToFloat(linalg.Float, rng.random.uintLessThan(u8, 4)) * yfactor;
+            } else {
+                if (rng.random.float(f32) < 0.3) {
+                    momentum.x = 0.0;
+                    momentum.y = 0.0;
+                }
             }
 
             _ = c.SDL_SetRenderDrawColor(
@@ -206,6 +224,12 @@ pub fn main() anyerror!void {
             // Render rect
             var rect = entity.getSprite();
             _ = c.SDL_RenderFillRect(renderer, @ptrCast(?[*]c.SDL_Rect, &rect));
+        }
+
+        if (rng.random.float(f32) < 0.04) {
+            worldPtr.*.entities.append(makeRandomEntity(&rng, worldPtr.*.entities.len + 1)) catch {
+                return error.EntityCreationError;
+            };
         }
 
         c.SDL_RenderPresent(renderer);
