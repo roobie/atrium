@@ -67,6 +67,8 @@ const SDL = struct {
         c.SDL_Log(errFmt, c.SDL_GetError());
         return error.SDLInitializationFailed;
     }
+
+    // pub fn drawScene()
 };
 
 const Lua = struct {
@@ -219,16 +221,17 @@ pub fn main() anyerror!void {
     };
     defer c.SDL_Quit();
 
-    const screen = c.SDL_CreateWindow(
+    const window = c.SDL_CreateWindow(
         c"GIZ",
         SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
         976, 720, c.SDL_WINDOW_OPENGL)
         orelse {
             return SDL.logFatal(c"Unable to create window: %s");
     };
-    defer c.SDL_DestroyWindow(screen);
+    defer c.SDL_DestroyWindow(window);
+    const windowSurf = c.SDL_GetWindowSurface(window);
 
-    const renderer = c.SDL_CreateRenderer(screen, -1, 0) orelse {
+    const renderer = c.SDL_CreateRenderer(window, -1, 0) orelse {
         return SDL.logFatal(c"Unable to create renderer: %s");
     };
     defer c.SDL_DestroyRenderer(renderer);
@@ -238,13 +241,7 @@ pub fn main() anyerror!void {
     var delay: u32 = 0;
     var delta: u32 = 0;
 
-    var fpsMan: c.FPSmanager = c.FPSmanager {
-        .framecount = 0,
-        .rateticks = 0.0,
-        .baseticks = 0,
-        .lastticks = 0,
-        .rate = 0,
-    };
+    var fpsMan: c.FPSmanager = undefined;
     var fpsManPtr: ?[*]c.FPSmanager = @ptrCast([*]c.FPSmanager, &fpsMan);
     c.SDL_initFramerate(fpsManPtr);
     SDL.check(c.SDL_setFramerate(fpsManPtr, 60)) catch {
@@ -264,6 +261,9 @@ pub fn main() anyerror!void {
                         c.SDLK_q => {
                             quit = true;
                         },
+                        c.SDLK_w => {
+                            warn("DELAY: {} || DELTA: {}\n", delay, delta);
+                        },
                         else => {},
                     }
                 },
@@ -271,13 +271,26 @@ pub fn main() anyerror!void {
             }
         }
 
+        // clear color
+        _ = c.SDL_SetRenderDrawColor(renderer, 0, 80, 160, 155);
         _ = c.SDL_RenderClear(renderer);
+
+        const surf = c.SDL_CreateRGBSurface(0, 100, 100, 32, 0,0,0,0);
+        defer c.SDL_FreeSurface(surf);
+        _ = c.SDL_FillRect(surf, null, c.SDL_MapRGB(surf.?.*.format, 255, 0, 0));
+        var surfRect = c.SDL_Rect {
+            .x = 0,
+            .y = 0,
+            .w = 100,
+            .h = 100,
+        };
+        _ = c.SDL_SetSurfaceRLE(surf, 1);
+        _ = c.SDL_BlitSurface(surf, null, windowSurf, @ptrCast(?[*]c.SDL_Rect, &surfRect));
         c.SDL_RenderPresent(renderer);
 
         delay = c.SDL_GetTicks();
         delta = c.SDL_framerateDelay(fpsManPtr);
         delay = c.SDL_GetTicks() - delay;
-        warn("DELAY: {} || DELTA: {}\n", delay, delta);
     }
 }
 
