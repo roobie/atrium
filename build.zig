@@ -10,10 +10,12 @@ pub fn build(b: *Builder) void {
     exe.addIncludeDir("/usr/include/luajit-2.0");
     exe.linkSystemLibrary("luajit-5.1");
 
+    exe.linkSystemLibrary("c");
+    exe.linkSystemLibrary("pthread");
     exe.linkSystemLibrary("SDL2");
     exe.linkSystemLibrary("SDL2_gfx");
-    exe.linkSystemLibrary("c");
 
+    exe.addCompileFlags([][] const u8{"-D_REENTRANT"});
 
     //exe.addIncludeDir("/usr/include/guile/2.0");
     //exe.linkSystemLibrary("guile-2.0");

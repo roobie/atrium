@@ -1,5 +1,8 @@
 const std = @import("std");
 const mem = std.mem;
+const math = @import("std").math;
+const rand = @import("std").rand;
+
 const assert = @import("std").debug.assert;
 const warn = @import("std").debug.warn;
 
@@ -14,6 +17,8 @@ const c = @cImport({
     @cInclude("lualib.h");
     @cInclude("lauxlib.h");
     @cInclude("luajit.h");
+
+    // @cInclude("dSFMT.h");
 
     @cInclude("SDL2/SDL.h");
     @cInclude("SDL2/SDL2_framerate.h");
@@ -94,6 +99,36 @@ const Lua = struct {
         c.luaL_openlibs(self.state);
     }
 
+    // customs
+    pub fn clearStack(self: *Lua) void {
+        self.setTop(self.getTop());
+    }
+
+    pub fn getRandom(lua: *Lua) LuaNumber {
+        const top = lua.getTop();
+        defer lua.setTop(top);
+
+        lua.getGlobal(c"math");
+        // assert(lua.getType(top + 1) == c.LUA_TTABLE);
+        lua.getField(top + 1, c"random");
+        // assert(lua.getType(top + 2) == c.LUA_TFUNCTION);
+        lua.call(0, 1); // pops the function being called, along with any args
+        // assert(lua.getType(top + 2) == c.LUA_TNUMBER);
+        return lua.getNumber(top + 2);
+    }
+
+    pub fn call(self: *Lua, nparams: u32, nresults: u32) void {
+        c.lua_call(self.state, @bitCast(c_int, nparams), @bitCast(c_int, nresults));
+    }
+
+    pub fn getField(self: *Lua, index: u32, name: CString) void {
+        c.lua_getfield(self.state, @bitCast(c_int, index), name);
+    }
+
+    pub fn getGlobal(self: *Lua, name: CString) void {
+        c.lua_getfield(self.state, c.LUA_GLOBALSINDEX, name);
+    }
+
     pub fn setGlobal(self: *Lua, name: CString) void {
         c.lua_setfield(self.state, c.LUA_GLOBALSINDEX, name);
     }
@@ -133,6 +168,9 @@ const Lua = struct {
         return @bitCast(u32, c.lua_gettop(self.state));
     }
     // LUA_API void  (lua_settop) (lua_State *L, int idx);
+    pub fn setTop(self: *Lua, n: u32) void {
+        return c.lua_settop(self.state, @bitCast(c_int, n));
+    }
     // LUA_API void  (lua_pushvalue) (lua_State *L, int idx);
     // LUA_API void  (lua_remove) (lua_State *L, int idx);
     // LUA_API void  (lua_insert) (lua_State *L, int idx);
@@ -149,6 +187,9 @@ const Lua = struct {
     // LUA_API int             (lua_iscfunction) (lua_State *L, int idx);
     // LUA_API int             (lua_isuserdata) (lua_State *L, int idx);
     // LUA_API int             (lua_type) (lua_State *L, int idx);
+    pub fn getType(self: *Lua, index: u32) i32 {
+        return @bitCast(i32, c.lua_type(self.state, @bitCast(c_int, index)));
+    }
     // LUA_API const char     *(lua_typename) (lua_State *L, int tp);
 
     // LUA_API lua_Number      (lua_tonumber) (lua_State *L, int idx);
@@ -169,7 +210,7 @@ const Lua = struct {
     }
     // LUA_API size_t          (lua_objlen) (lua_State *L, int idx);
     // LUA_API lua_CFunction   (lua_tocfunction) (lua_State *L, int idx);
-    // LUA_API void	       *(lua_touserdata) (lua_State *L, int idx);
+    // LUA_API void	          *(lua_touserdata) (lua_State *L, int idx);
     // LUA_API lua_State      *(lua_tothread) (lua_State *L, int idx);
     // LUA_API const void     *(lua_topointer) (lua_State *L, int idx);
 
@@ -215,6 +256,13 @@ pub fn main() anyerror!void {
     lua.evalString(c"print('Hello from luajit', 1, 2, 'test')") catch {
         std.debug.warn("Error when executing Lua code");
     };
+
+    warn("RANDOM check: {}\n", lua.getRandom());
+
+    var buf: [8]u8 = undefined;
+    try std.os.getRandomBytes(buf[0..]);
+    const seed = mem.readIntLE(u64, buf[0..8]);
+    var rng = rand.DefaultPrng.init(seed);
 
     SDL.check(c.SDL_Init(c.SDL_INIT_VIDEO)) catch {
         return SDL.logFatal(c"Unable to initialize SDL: %s");
@@ -274,21 +322,28 @@ pub fn main() anyerror!void {
         _ = c.SDL_SetRenderDrawColor(renderer, 0, 80, 160, 155);
         _ = c.SDL_RenderClear(renderer);
 
-
-        // Creat a rect at pos ( 50, 50 ) that's 50 pixels wide and 50 pixels high.
-        var rect = c.SDL_Rect {
-            .x = 50,
-            .y = 50,
-            .w = 50,
-            .h = 50,
-        };
+        var ww: c_int = undefined;
+        var wh: c_int = undefined;
+        c.SDL_GetWindowSize(window, @ptrCast(?[*]c_int, &ww), @ptrCast(?[*]c_int, &wh));
 
         // Set render color to blue ( rect will be rendered in this color )
         _ = c.SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
+        var i: u32 =  50;
+        while (i > 0) : (i -= 1) {
+            var rx = rng.random.uintLessThan(u32, @bitCast(u32, ww) - 50);
+            var ry = rng.random.uintLessThan(u32, @bitCast(u32, wh) - 50);
 
-        // Render rect
-        _ = c.SDL_RenderFillRect(renderer, @ptrCast(?[*]c.SDL_Rect, &rect));
+            // Creat a rect at pos ( 50, 50 ) that's 50 pixels wide and 50 pixels high.
+            var rect = c.SDL_Rect {
+                .x = @bitCast(c_int, rx),
+                .y = @bitCast(c_int, ry),
+                .w = 50,
+                .h = 50,
+            };
 
+            // Render rect
+            _ = c.SDL_RenderFillRect(renderer, @ptrCast(?[*]c.SDL_Rect, &rect));
+        }
 
         c.SDL_RenderPresent(renderer);
 
