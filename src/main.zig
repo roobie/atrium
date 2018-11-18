@@ -94,10 +94,14 @@ pub fn main() anyerror!void {
     };
     defer c.SDL_Quit();
 
+    const wflags = c.SDL_WINDOW_BORDERLESS
+        //|c.SDL_WINDOW_RESIZABLE
+        |c.SDL_WINDOW_OPENGL;
     const window = c.SDL_CreateWindow(
         c"GIZ",
         sdl.SDL_WINDOWPOS_UNDEFINED, sdl.SDL_WINDOWPOS_UNDEFINED,
-        windowWidth, windowHeight, c.SDL_WINDOW_OPENGL)
+        windowWidth, windowHeight,
+        wflags)
         orelse {
             return sdl.logFatal(c"Unable to create window: %s");
     };
@@ -134,6 +138,9 @@ pub fn main() anyerror!void {
                 },
                 c.SDL_WINDOWEVENT_RESIZED => {
                     c.SDL_GetWindowSize(window, @ptrCast(?[*]c_int, &ww), @ptrCast(?[*]c_int, &wh));
+                },
+                c.SDL_MOUSEMOTION => {
+                    warn("Mouse: {}\n", event.motion);
                 },
                 c.SDL_KEYDOWN => {
                     switch (event.key.keysym.@"sym") {
