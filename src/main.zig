@@ -124,6 +124,17 @@ pub fn main() anyerror!void {
         return sdl.logFatal(c"Error initializing (set) framerate controller: %s");
     };
 
+    var _x: c_int = 0;
+    _ = c.SDL_GL_SetAttribute(@bitCast(c.SDL_GLattr, _x + c.SDL_GL_CONTEXT_FLAGS),
+                              c.SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
+    _ = c.SDL_GL_SetAttribute(@bitCast(c.SDL_GLattr, _x + c.SDL_GL_CONTEXT_PROFILE_MASK), c.SDL_GL_CONTEXT_PROFILE_CORE);
+    _ = c.SDL_GL_SetAttribute(@bitCast(c.SDL_GLattr, _x + c.SDL_GL_DOUBLEBUFFER), 1);
+    _ = c.SDL_GL_SetAttribute(@bitCast(c.SDL_GLattr, _x + c.SDL_GL_DEPTH_SIZE), 24);
+    _ = c.SDL_GL_SetAttribute(@bitCast(c.SDL_GLattr, _x + c.SDL_GL_STENCIL_SIZE), 8);
+    _ = c.SDL_GL_SetAttribute(@bitCast(c.SDL_GLattr, _x + c.SDL_GL_CONTEXT_MAJOR_VERSION), 3);
+    _ = c.SDL_GL_SetAttribute(@bitCast(c.SDL_GLattr, _x + c.SDL_GL_CONTEXT_MINOR_VERSION), 2);
+    _ = c.SDL_GL_SetSwapInterval(1);
+
     var ww: c_int = undefined;
     var wh: c_int = undefined;
     c.SDL_GetWindowSize(window, @ptrCast(?[*]c_int, &ww), @ptrCast(?[*]c_int, &wh));

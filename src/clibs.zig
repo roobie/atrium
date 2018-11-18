@@ -6,6 +6,9 @@ pub const c = @cImport({
     @cInclude("lauxlib.h");
     @cInclude("luajit.h");
 
+    @cDefine("CIMGUI_DEFINE_ENUMS_AND_STRUCTS", "1");
+    @cInclude("cimgui.h");
+
     @cInclude("SDL2/SDL.h");
     @cInclude("SDL2/SDL2_framerate.h");
     @cInclude("SDL2/SDL_image.h");

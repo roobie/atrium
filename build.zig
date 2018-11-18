@@ -9,6 +9,10 @@ pub fn build(b: *Builder) void {
 
     //exe.addIncludeDir("./submodules/linmath.h");
 
+    exe.addLibPath("./submodules/cimgui/build/");
+    exe.addIncludeDir("./submodules/cimgui");
+    exe.linkSystemLibrary("cimgui");
+
     exe.addIncludeDir("/usr/include/luajit-2.0");
     exe.linkSystemLibrary("luajit-5.1");
 
