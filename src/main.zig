@@ -1,22 +1,73 @@
 const std = @import("std");
 const mem = std.mem;
 const assert = @import("std").debug.assert;
+const warn = @import("std").debug.warn;
+
+const Math = struct {
+    pub fn max(comptime T: type, a: T, b: T) T {
+        return if (a < b) b else a;
+    }
+};
 
 const c = @cImport({
     @cInclude("lua.h");
     @cInclude("lualib.h");
     @cInclude("lauxlib.h");
     @cInclude("luajit.h");
+
+    @cInclude("SDL2/SDL.h");
+    @cInclude("SDL2/SDL2_framerate.h");
+    @cInclude("SDL2/SDL_image.h");
+    @cInclude("SDL2/SDL_ttf.h");
 });
+
+pub const FPSmanager = extern struct {
+    framecount: u32,
+    rateticks: f32,
+    baseticks: u32,
+    lastticks: u32,
+    rate: u32,
+};
+
+const SDL_WINDOWPOS_UNDEFINED = @bitCast(c_int, c.SDL_WINDOWPOS_UNDEFINED_MASK);
+extern fn SDL_PollEvent(event: *c.SDL_Event) c_int;
+// SDL_RWclose is fundamentally unrepresentable in Zig, because `ctx` is
+// evaluated twice. One could make the case that this is a bug in SDL,
+// especially since the docs list a real function prototype that would not
+// have this double-evaluation of the parameter.
+// If SDL would instead of a macro use a static inline function,
+// it would resolve the SDL bug as well as make the function visible to Zig
+// and to debuggers.
+// SDL_rwops.h:#define SDL_RWclose(ctx)        (ctx)->close(ctx)
+inline fn SDL_RWclose(ctx: [*]c.SDL_RWops) c_int {
+    return ctx[0].close.?(ctx);
+}
 
 const LuaState = *c.struct_lua_State;
 const String = []const u8;
 const CString = [*]const u8;
 const LuaFunction = extern fn(?LuaState) c_int;
+const LuaNumber = f64;
+const LuaInteger = i64;
 
 fn str(cstr: CString) String {
     return mem.toSliceConst(u8, cstr);
 }
+
+const SDL = struct {
+    pub fn check(res: c_int) !void {
+        if (res != 0) return error.BadValue;
+    }
+
+    pub fn logErr(errFmt: CString) void {
+        c.SDL_Log(errFmt, c.SDL_GetError());
+    }
+
+    pub fn logFatal(errFmt: CString) anyerror {
+        c.SDL_Log(errFmt, c.SDL_GetError());
+        return error.SDLInitializationFailed;
+    }
+};
 
 const Lua = struct {
     state: LuaState,
@@ -41,12 +92,16 @@ const Lua = struct {
         c.luaL_openlibs(self.state);
     }
 
+    pub fn setGlobal(self: *Lua, name: CString) void {
+        c.lua_setfield(self.state, c.LUA_GLOBALSINDEX, name);
+    }
+
     // #define lua_register(L,n,f) (lua_pushcfunction(L, (f)), lua_setglobal(L, (n)))
     // #define lua_pushcfunction(L,f)	lua_pushcclosure(L, (f), 0)
     // #define lua_setglobal(L,s)	lua_setfield(L, LUA_GLOBALSINDEX, (s))
     pub fn registerGlobalFunc(self: *Lua, name: CString, func: LuaFunction) void {
         c.lua_pushcclosure(self.state, func, 0);
-        c.lua_setfield(self.state, c.LUA_GLOBALSINDEX, name);
+        self.setGlobal(name);
     }
 
     fn check(res: c_int) !void {
@@ -94,15 +149,35 @@ const Lua = struct {
     // LUA_API int             (lua_type) (lua_State *L, int idx);
     // LUA_API const char     *(lua_typename) (lua_State *L, int tp);
 
-    // #define lua_tostring(L,i)	lua_tolstring(L, (i), NULL)
+    // LUA_API lua_Number      (lua_tonumber) (lua_State *L, int idx);
+    pub fn getNumber(self: *Lua, index: u32) LuaNumber {
+        return c.lua_tonumber(self.state, @bitCast(c_int, index));
+    }
+    // LUA_API lua_Integer     (lua_tointeger) (lua_State *L, int idx);
+    pub fn getInteger(self: *Lua, index: u32) LuaInteger {
+        return c.lua_tointeger(self.state, @bitCast(c_int, index));
+    }
+    // LUA_API int             (lua_toboolean) (lua_State *L, int idx);
+    pub fn getBool(self: *Lua, index: u32) bool {
+        return 0 != c.lua_toboolean(self.state, @bitCast(c_int, index));
+    }
+    // LUA_API const char     *(lua_tolstring) (lua_State *L, int idx, size_t *len);
     pub fn getString(self: *Lua, index: u32) ?CString {
         return c.lua_tolstring(self.state, @bitCast(c_int, index), null);
     }
+    // LUA_API size_t          (lua_objlen) (lua_State *L, int idx);
+    // LUA_API lua_CFunction   (lua_tocfunction) (lua_State *L, int idx);
+    // LUA_API void	       *(lua_touserdata) (lua_State *L, int idx);
+    // LUA_API lua_State      *(lua_tothread) (lua_State *L, int idx);
+    // LUA_API const void     *(lua_topointer) (lua_State *L, int idx);
 
     // LUA_API void  (lua_pushnil) (lua_State *L);
+    pub fn pushNil(self: *Lua) void {
+        c.lua_pushnil(self.State);
+    }
     // LUA_API void  (lua_pushnumber) (lua_State *L, lua_Number n);
-    pub fn pushNumber(self: *Lua, num: usize) void {
-        c.lua_pushnumber(self.state, @bitCast(c_int, num));
+    pub fn pushNumber(self: *Lua, num: LuaNumber) void {
+        c.lua_pushnumber(self.state, @bitCast(c_longdouble, num));
     }
     // LUA_API void  (lua_pushinteger) (lua_State *L, lua_Integer n);
     // LUA_API void  (lua_pushlstring) (lua_State *L, const char *s, size_t l);
@@ -138,16 +213,82 @@ pub fn main() anyerror!void {
     lua.evalString(c"print('Hello from luajit', 1, 2, 'test')") catch {
         std.debug.warn("Error when executing Lua code");
     };
+
+    SDL.check(c.SDL_Init(c.SDL_INIT_VIDEO)) catch {
+        return SDL.logFatal(c"Unable to initialize SDL: %s");
+    };
+    defer c.SDL_Quit();
+
+    const screen = c.SDL_CreateWindow(
+        c"GIZ",
+        SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+        976, 720, c.SDL_WINDOW_OPENGL)
+        orelse {
+            return SDL.logFatal(c"Unable to create window: %s");
+    };
+    defer c.SDL_DestroyWindow(screen);
+
+    const renderer = c.SDL_CreateRenderer(screen, -1, 0) orelse {
+        return SDL.logFatal(c"Unable to create renderer: %s");
+    };
+    defer c.SDL_DestroyRenderer(renderer);
+
+    const targetFps = 60;
+
+    var delay: u32 = 0;
+    var delta: u32 = 0;
+
+    var fpsMan: c.FPSmanager = c.FPSmanager {
+        .framecount = 0,
+        .rateticks = 0.0,
+        .baseticks = 0,
+        .lastticks = 0,
+        .rate = 0,
+    };
+    var fpsManPtr: ?[*]c.FPSmanager = @ptrCast([*]c.FPSmanager, &fpsMan);
+    c.SDL_initFramerate(fpsManPtr);
+    SDL.check(c.SDL_setFramerate(fpsManPtr, 60)) catch {
+        return SDL.logFatal(c"Error initializing (set) framerate controller: %s");
+    };
+
+    var quit = false;
+    while (!quit) {
+        var event: c.SDL_Event = undefined;
+        while (SDL_PollEvent(&event) != 0) {
+            switch (event.@"type") {
+                c.SDL_QUIT => {
+                    quit = true;
+                },
+                c.SDL_KEYDOWN => {
+                    switch (event.key.keysym.@"sym") {
+                        c.SDLK_q => {
+                            quit = true;
+                        },
+                        else => {},
+                    }
+                },
+                else => {},
+            }
+        }
+
+        _ = c.SDL_RenderClear(renderer);
+        c.SDL_RenderPresent(renderer);
+
+        delay = c.SDL_GetTicks();
+        delta = c.SDL_framerateDelay(fpsManPtr);
+        delay = c.SDL_GetTicks() - delay;
+        warn("DELAY: {} || DELTA: {}\n", delay, delta);
+    }
 }
 
 
 test "luajit" {
 
-    var lua = Lua.init(null);
-    defer lua.deinit();
-    lua.openLibs();
-    lua.setPanicFunc(luaPrint);
+    //var lua = Lua.init(null);
+    //defer lua.deinit();
+    //lua.openLibs();
+    //lua.setPanicFunc(luaPrint);
 
-    lua.pushNumber(10);
-    assert(lua.isNumber(1));
+    //lua.pushNumber(10);
+    //assert(lua.isNumber(1));
 }

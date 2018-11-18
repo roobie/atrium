@@ -5,10 +5,15 @@ pub fn build(b: *Builder) void {
     const exe = b.addExecutable("giz", "src/main.zig");
     exe.setBuildMode(mode);
 
-    exe.addLibPath("/usr/lib/x86_64-linux-gnu/");
+    //exe.addLibPath("/usr/lib/x86_64-linux-gnu/");
 
     exe.addIncludeDir("/usr/include/luajit-2.0");
     exe.linkSystemLibrary("luajit-5.1");
+
+    exe.linkSystemLibrary("SDL2");
+    exe.linkSystemLibrary("SDL2_gfx");
+    exe.linkSystemLibrary("c");
+
 
     //exe.addIncludeDir("/usr/include/guile/2.0");
     //exe.linkSystemLibrary("guile-2.0");
@@ -26,3 +31,4 @@ pub fn build(b: *Builder) void {
     b.default_step.dependOn(&exe.step);
     b.installArtifact(exe);
 }
+
