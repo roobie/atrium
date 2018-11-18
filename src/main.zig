@@ -6,24 +6,55 @@ const rand = @import("std").rand;
 const assert = @import("std").debug.assert;
 const warn = @import("std").debug.warn;
 
-const lua = @import("lua.zig");
+const _lua = @import("lua.zig");
 const sdl = @import("sdl.zig");
+
+const linalg = @import("linalg.zig");
 
 const c = @import("clibs.zig").c;
 
+
+const Entity = struct {
+    momentum: linalg.Vec2,
+    sprite: c.SDL_Rect,
+};
+
+var e1: Entity = Entity {
+    .momentum = linalg.Vec2.make(1.0, 1.0),
+    .sprite = c.SDL_Rect { .x = 10, .y = 10, .w = 10, .h = 10},
+};
+
+var game_data = init: {
+    const count = 50;
+    var initial_value: [count]Entity = undefined;
+    for (initial_value) |*e, i| {
+        e.* = Entity {
+            .momentum = linalg.Vec2.make(1, 1),
+            .sprite = c.SDL_Rect {
+                .x = 50,
+                .y = 50,
+                .w = 50,
+                .h = 50,
+            },
+        };
+    }
+    break :init initial_value[0..];
+};
+
 pub fn main() anyerror!void {
-    var alua = lua.Lua.init(null);
-    defer alua.deinit();
 
-    alua.openLibs();
-    alua.setPanicFunc(lua.luaPrint);
-    alua.registerGlobalFunc(c"print", lua.luaPrint);
+    var lua = _lua.init(null);
+    defer lua.deinit();
 
-    alua.evalString(c"print('Hello from luajit', 1, 2, 'test')") catch {
+    lua.openLibs();
+    lua.setPanicFunc(_lua.luaPrint);
+    lua.registerGlobalFunc(c"print", _lua.luaPrint);
+
+    lua.evalString(c"print('Hello from luajit', 1, 2, 'test')") catch {
         std.debug.warn("Error when executing Lua code");
     };
 
-    warn("RANDOM check: {}\n", alua.getRandom());
+    warn("RANDOM check: {}\n", lua.getRandom());
 
     var buf: [8]u8 = undefined;
     try std.os.getRandomBytes(buf[0..]);
@@ -61,20 +92,6 @@ pub fn main() anyerror!void {
         return sdl.logFatal(c"Error initializing (set) framerate controller: %s");
     };
 
-    var game_data = init: {
-        const count = 50;
-        var initial_value: [count]c.SDL_Rect = undefined;
-        for (initial_value) |*rect, i| {
-            rect.* = c.SDL_Rect {
-                .x = 50,
-                .y = 50,
-                .w = 50,
-                .h = 50,
-            };
-        }
-        break :init initial_value[0..];
-    };
-
     var quit = false;
     while (!quit) {
         var event: c.SDL_Event = undefined;
@@ -107,8 +124,8 @@ pub fn main() anyerror!void {
         c.SDL_GetWindowSize(window, @ptrCast(?[*]c_int, &ww), @ptrCast(?[*]c_int, &wh));
 
         const factor = delta / 1000;
-        for (game_data) |rec| {
-            var rect = rec;
+        for (game_data) |entity| {
+            var rect = entity.sprite;
             const dx = rng.random.uintLessThan(u32, 10);
             (&rect).*.x = rect.x + 1;
                 //@bitCast(c_int, factor * dx);
@@ -135,11 +152,11 @@ pub fn main() anyerror!void {
 
 test "luajit" {
 
-    //var alua = Lua.init(null);
-    //defer alua.deinit();
-    //alua.openLibs();
-    //alua.setPanicFunc(lua.luaPrint);
+    //var lua = Lua.init(null);
+    //defer lua.deinit();
+    //lua.openLibs();
+    //lua.setPanicFunc(_lua.luaPrint);
 
-    //alua.pushNumber(10);
-    //assert(alua.isNumber(1));
+    //lua.pushNumber(10);
+    //assert(lua.isNumber(1));
 }

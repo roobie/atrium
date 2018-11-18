@@ -7,6 +7,7 @@ fn str(cstr: CString) String {
     return mem.toSliceConst(u8, cstr);
 }
 
+// LUA_API lua_State *(lua_newstate) (lua_Alloc f, void *ud);
 pub const LuaState = *c.struct_lua_State;
 pub const String = []const u8;
 pub const CString = [*]const u8;
@@ -15,16 +16,15 @@ pub const LuaNumber = f64;
 pub const LuaInteger = i64;
 
 
+// #define lua_open()	luaL_newstate()
+pub fn init(aState: ?LuaState) Lua {
+    return Lua {
+        .state = aState orelse c.luaL_newstate() orelse unreachable,
+    };
+}
+
 pub const Lua = struct {
     state: LuaState,
-
-    // LUA_API lua_State *(lua_newstate) (lua_Alloc f, void *ud);
-    // #define lua_open()	luaL_newstate()
-    pub fn init(aState: ?LuaState) Lua {
-        return Lua {
-            .state = aState orelse c.luaL_newstate() orelse unreachable,
-        };
-    }
 
     pub fn deinit(self: *Lua) void {
         c.lua_close(self.state);
@@ -173,7 +173,7 @@ pub const Lua = struct {
 };
 
 pub extern fn luaPrint(state: ?LuaState) c_int {
-    var lua = Lua.init(state);
+    var lua = init(state);
     const top = lua.getTop();
     var i = top - top + 1;
     while (i <= top) : (i += 1) {

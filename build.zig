@@ -7,6 +7,8 @@ pub fn build(b: *Builder) void {
 
     //exe.addLibPath("/usr/lib/x86_64-linux-gnu/");
 
+    exe.addIncludeDir("./submodules/linmath.h");
+
     exe.addIncludeDir("/usr/include/luajit-2.0");
     exe.linkSystemLibrary("luajit-5.1");
 

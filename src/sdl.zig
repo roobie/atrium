@@ -13,7 +13,9 @@ pub const FPSmanager = extern struct {
 };
 
 pub const SDL_WINDOWPOS_UNDEFINED = @bitCast(c_int, c.SDL_WINDOWPOS_UNDEFINED_MASK);
+
 pub extern fn SDL_PollEvent(event: *c.SDL_Event) c_int;
+
 // SDL_RWclose is fundamentally unrepresentable in Zig, because `ctx` is
 // evaluated twice. One could make the case that this is a bug in SDL,
 // especially since the docs list a real function prototype that would not
