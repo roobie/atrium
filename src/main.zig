@@ -142,6 +142,9 @@ pub fn main() anyerror!void {
                 c.SDL_MOUSEMOTION => {
                     warn("Mouse: {}\n", event.motion);
                 },
+                c.SDL_MOUSEBUTTONDOWN => {
+                    warn("Mouse: {}\n", event.button);
+                },
                 c.SDL_KEYDOWN => {
                     switch (event.key.keysym.@"sym") {
                         c.SDLK_q => {
