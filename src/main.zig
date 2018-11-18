@@ -229,7 +229,6 @@ pub fn main() anyerror!void {
             return SDL.logFatal(c"Unable to create window: %s");
     };
     defer c.SDL_DestroyWindow(window);
-    const windowSurf = c.SDL_GetWindowSurface(window);
 
     const renderer = c.SDL_CreateRenderer(window, -1, 0) orelse {
         return SDL.logFatal(c"Unable to create renderer: %s");
@@ -275,17 +274,22 @@ pub fn main() anyerror!void {
         _ = c.SDL_SetRenderDrawColor(renderer, 0, 80, 160, 155);
         _ = c.SDL_RenderClear(renderer);
 
-        const surf = c.SDL_CreateRGBSurface(0, 100, 100, 32, 0,0,0,0);
-        defer c.SDL_FreeSurface(surf);
-        _ = c.SDL_FillRect(surf, null, c.SDL_MapRGB(surf.?.*.format, 255, 0, 0));
-        var surfRect = c.SDL_Rect {
-            .x = 0,
-            .y = 0,
-            .w = 100,
-            .h = 100,
+
+        // Creat a rect at pos ( 50, 50 ) that's 50 pixels wide and 50 pixels high.
+        var rect = c.SDL_Rect {
+            .x = 50,
+            .y = 50,
+            .w = 50,
+            .h = 50,
         };
-        _ = c.SDL_SetSurfaceRLE(surf, 1);
-        _ = c.SDL_BlitSurface(surf, null, windowSurf, @ptrCast(?[*]c.SDL_Rect, &surfRect));
+
+        // Set render color to blue ( rect will be rendered in this color )
+        _ = c.SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
+
+        // Render rect
+        _ = c.SDL_RenderFillRect(renderer, @ptrCast(?[*]c.SDL_Rect, &rect));
+
+
         c.SDL_RenderPresent(renderer);
 
         delay = c.SDL_GetTicks();
