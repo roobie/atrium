@@ -13,6 +13,9 @@ const linalg = @import("linalg.zig");
 
 const c = @import("clibs.zig").c;
 
+const windowWidth = 976;
+const windowHeight = 720;
+
 const Entity = struct {
     id: usize,
     momentum: linalg.Vec2,
@@ -31,26 +34,36 @@ const Entity = struct {
     }
 };
 
+const World = struct {
+    entities: []Entity,
+};
+
 var e1: Entity = Entity {
     .momentum = linalg.Vec2.make(100.0, 100.0),
     .sprite = c.SDL_Rect { .x = 10, .y = 10, .w = 10, .h = 10},
 };
 
-var game_data = init: {
-    const count = 50;
-    var initial_value: [count]Entity = undefined;
-    for (initial_value) |*e, i| {
-        e.* = Entity {
-            .id = i,
-            .position = linalg.Vec2.make(10, 10),
+const startEntityCount = 100;
+
+fn populateEntities(arr: *[startEntityCount]Entity) void {
+    var i: usize = 0;
+    while (i < startEntityCount) : (i += 1) {
+        arr[i] = Entity {
+            .id = 1,
+            .position = linalg.Vec2.make(windowWidth / 2, windowHeight / 2),
             .dimensions = linalg.Vec2.make(10, 10),
-            .momentum = linalg.Vec2.make(15, 15),
+            .momentum = linalg.Vec2.make(5, 5),
         };
     }
-    break :init initial_value[0..];
-};
+}
 
 pub fn main() anyerror!void {
+    var entities: [startEntityCount]Entity = undefined;
+    populateEntities(&entities);
+    const world = World {
+        .entities = entities[0..],
+    };
+    var worldPtr = &world;
 
     var lua = _lua.init(null);
     defer lua.deinit();
@@ -78,7 +91,7 @@ pub fn main() anyerror!void {
     const window = c.SDL_CreateWindow(
         c"GIZ",
         sdl.SDL_WINDOWPOS_UNDEFINED, sdl.SDL_WINDOWPOS_UNDEFINED,
-        976, 720, c.SDL_WINDOW_OPENGL)
+        windowWidth, windowHeight, c.SDL_WINDOW_OPENGL)
         orelse {
             return sdl.logFatal(c"Unable to create window: %s");
     };
@@ -133,15 +146,12 @@ pub fn main() anyerror!void {
         c.SDL_GetWindowSize(window, @ptrCast(?[*]c_int, &ww), @ptrCast(?[*]c_int, &wh));
 
         const factor: linalg.Float = @intToFloat(linalg.Float, delta) / 1000.0;
-        for (game_data) |*entity, i| {
-            const momentum = entity.*.momentum;
-            var position = entity.*.position;
-            if (i == 0) warn("A! {} :: {}\n", entity.*.position.x, position.x);
-            //entity.*.position = linalg.Vec2.make(position.x + momentum.x, position.y + momentum.y);
-            //entity.*.position.addI(&momentum);
-            position.addI(&momentum);
-            entity.*.position.x = position.x;
-            if (i == 0) warn("B! {} :: {}\n", entity.*.position.x, position.x);
+        for (worldPtr.*.entities) |*entity, i| {
+            const momentum = &entity.*.momentum;
+            var position = &entity.*.position;
+            var dimensions = &entity.*.dimensions;
+
+            position.addI(momentum);
 
             _ = c.SDL_SetRenderDrawColor(
                 renderer,
