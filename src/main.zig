@@ -21,7 +21,7 @@ const Entity = struct {
     momentum: linalg.Vec2,
     position: linalg.Vec2,
     dimensions: linalg.Vec2,
-    //baseColor: [4]u8,
+    base_color: [4]u8,
 
     pub fn getSprite(self: *Entity) c.SDL_Rect {
         //c.SDL_Rect {x: c_int, y: c_int,w: c_int,h: c_int,},
@@ -43,28 +43,27 @@ var e1: Entity = Entity {
     .sprite = c.SDL_Rect { .x = 10, .y = 10, .w = 10, .h = 10},
 };
 
-const startEntityCount = 100;
+const startEntityCount = 20;
 
-fn populateEntities(arr: *[startEntityCount]Entity) void {
+fn populateEntities(rng: *rand.Xoroshiro128, arr: *[startEntityCount]Entity) void {
     var i: usize = 0;
     while (i < startEntityCount) : (i += 1) {
         arr[i] = Entity {
             .id = 1,
             .position = linalg.Vec2.make(windowWidth / 2, windowHeight / 2),
             .dimensions = linalg.Vec2.make(10, 10),
-            .momentum = linalg.Vec2.make(5, 5),
+            .momentum = linalg.Vec2.make(0, 0),
+            .base_color = []u8 {
+                55 + rng.random.uintLessThan(u8, 100),
+                55 + rng.random.uintLessThan(u8, 100),
+                55 + rng.random.uintLessThan(u8, 100),
+                55 + rng.random.uintLessThan(u8, 200),
+            }
         };
     }
 }
 
 pub fn main() anyerror!void {
-    var entities: [startEntityCount]Entity = undefined;
-    populateEntities(&entities);
-    const world = World {
-        .entities = entities[0..],
-    };
-    var worldPtr = &world;
-
     var lua = _lua.init(null);
     defer lua.deinit();
 
@@ -83,7 +82,14 @@ pub fn main() anyerror!void {
     const seed = mem.readIntLE(u64, buf[0..8]);
     var rng = rand.DefaultPrng.init(seed);
 
-    sdl.check(c.SDL_Init(c.SDL_INIT_VIDEO)) catch {
+    var entities: [startEntityCount]Entity = undefined;
+    populateEntities(&rng, &entities);
+    const world = World {
+        .entities = entities[0..],
+    };
+    var worldPtr = &world;
+
+    sdl.check(c.SDL_Init(c.SDL_INIT_VIDEO|c.SDL_INIT_GAMECONTROLLER)) catch {
         return sdl.logFatal(c"Unable to initialize SDL: %s");
     };
     defer c.SDL_Quit();
@@ -114,6 +120,10 @@ pub fn main() anyerror!void {
         return sdl.logFatal(c"Error initializing (set) framerate controller: %s");
     };
 
+    var ww: c_int = undefined;
+    var wh: c_int = undefined;
+    c.SDL_GetWindowSize(window, @ptrCast(?[*]c_int, &ww), @ptrCast(?[*]c_int, &wh));
+
     var quit = false;
     while (!quit) {
         var event: c.SDL_Event = undefined;
@@ -121,6 +131,9 @@ pub fn main() anyerror!void {
             switch (event.@"type") {
                 c.SDL_QUIT => {
                     quit = true;
+                },
+                c.SDL_WINDOWEVENT_RESIZED => {
+                    c.SDL_GetWindowSize(window, @ptrCast(?[*]c_int, &ww), @ptrCast(?[*]c_int, &wh));
                 },
                 c.SDL_KEYDOWN => {
                     switch (event.key.keysym.@"sym") {
@@ -138,27 +151,36 @@ pub fn main() anyerror!void {
         }
 
         // clear color
-        _ = c.SDL_SetRenderDrawColor(renderer, 0, 20, 60, 0x40);
+        _ = c.SDL_SetRenderDrawColor(renderer, 0, 0x20, 0x60, 0x40);
         _ = c.SDL_RenderClear(renderer);
-
-        var ww: c_int = undefined;
-        var wh: c_int = undefined;
-        c.SDL_GetWindowSize(window, @ptrCast(?[*]c_int, &ww), @ptrCast(?[*]c_int, &wh));
 
         const factor: linalg.Float = @intToFloat(linalg.Float, delta) / 1000.0;
         for (worldPtr.*.entities) |*entity, i| {
-            const momentum = &entity.*.momentum;
+            var momentum = &entity.*.momentum;
             var position = &entity.*.position;
             var dimensions = &entity.*.dimensions;
+            var base_color = &entity.*.base_color;
 
             position.addI(momentum);
 
+            if (rng.random.float(f32) < 0.08) {
+                const xfactor: linalg.Float = if (rng.random.boolean())
+                    @intToFloat(linalg.Float, -1) else 1;
+                const yfactor: linalg.Float = if (rng.random.boolean())
+                    @intToFloat(linalg.Float, -1) else 1;
+                momentum.x = rng.random.float(linalg.Float) *
+                    @intToFloat(linalg.Float, rng.random.uintLessThan(u8, 2)) * xfactor;
+                momentum.y = rng.random.float(linalg.Float) *
+                    @intToFloat(linalg.Float, rng.random.uintLessThan(u8, 2)) * yfactor;
+            }
+
             _ = c.SDL_SetRenderDrawColor(
                 renderer,
-                155 + rng.random.uintLessThan(u8, 100),
-                155 + rng.random.uintLessThan(u8, 100),
-                155 + rng.random.uintLessThan(u8, 100),
-                255);
+                base_color.*[0],
+                base_color.*[1],
+                base_color.*[2],
+                base_color.*[3],
+            );
 
             // Render rect
             var rect = entity.getSprite();
