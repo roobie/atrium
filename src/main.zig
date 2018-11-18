@@ -13,14 +13,26 @@ const linalg = @import("linalg.zig");
 
 const c = @import("clibs.zig").c;
 
-
 const Entity = struct {
+    id: usize,
     momentum: linalg.Vec2,
-    sprite: c.SDL_Rect,
+    position: linalg.Vec2,
+    dimensions: linalg.Vec2,
+    //baseColor: [4]u8,
+
+    pub fn getSprite(self: *Entity) c.SDL_Rect {
+        //c.SDL_Rect {x: c_int, y: c_int,w: c_int,h: c_int,},
+        return c.SDL_Rect {
+            .x = @floatToInt(c_int, self.position.x),
+            .y = @floatToInt(c_int, self.position.y),
+            .w = @floatToInt(c_int, self.dimensions.x),
+            .h = @floatToInt(c_int, self.dimensions.y),
+        };
+    }
 };
 
 var e1: Entity = Entity {
-    .momentum = linalg.Vec2.make(1.0, 1.0),
+    .momentum = linalg.Vec2.make(100.0, 100.0),
     .sprite = c.SDL_Rect { .x = 10, .y = 10, .w = 10, .h = 10},
 };
 
@@ -29,13 +41,10 @@ var game_data = init: {
     var initial_value: [count]Entity = undefined;
     for (initial_value) |*e, i| {
         e.* = Entity {
-            .momentum = linalg.Vec2.make(1, 1),
-            .sprite = c.SDL_Rect {
-                .x = 50,
-                .y = 50,
-                .w = 50,
-                .h = 50,
-            },
+            .id = i,
+            .position = linalg.Vec2.make(10, 10),
+            .dimensions = linalg.Vec2.make(10, 10),
+            .momentum = linalg.Vec2.make(15, 15),
         };
     }
     break :init initial_value[0..];
@@ -116,19 +125,23 @@ pub fn main() anyerror!void {
         }
 
         // clear color
-        _ = c.SDL_SetRenderDrawColor(renderer, 0, 80, 160, 155);
+        _ = c.SDL_SetRenderDrawColor(renderer, 0, 20, 60, 0x40);
         _ = c.SDL_RenderClear(renderer);
 
         var ww: c_int = undefined;
         var wh: c_int = undefined;
         c.SDL_GetWindowSize(window, @ptrCast(?[*]c_int, &ww), @ptrCast(?[*]c_int, &wh));
 
-        const factor = delta / 1000;
-        for (game_data) |entity| {
-            var rect = entity.sprite;
-            const dx = rng.random.uintLessThan(u32, 10);
-            (&rect).*.x = rect.x + 1;
-                //@bitCast(c_int, factor * dx);
+        const factor: linalg.Float = @intToFloat(linalg.Float, delta) / 1000.0;
+        for (game_data) |*entity, i| {
+            const momentum = entity.*.momentum;
+            var position = entity.*.position;
+            if (i == 0) warn("A! {} :: {}\n", entity.*.position.x, position.x);
+            //entity.*.position = linalg.Vec2.make(position.x + momentum.x, position.y + momentum.y);
+            //entity.*.position.addI(&momentum);
+            position.addI(&momentum);
+            entity.*.position.x = position.x;
+            if (i == 0) warn("B! {} :: {}\n", entity.*.position.x, position.x);
 
             _ = c.SDL_SetRenderDrawColor(
                 renderer,
@@ -138,6 +151,7 @@ pub fn main() anyerror!void {
                 255);
 
             // Render rect
+            var rect = entity.getSprite();
             _ = c.SDL_RenderFillRect(renderer, @ptrCast(?[*]c.SDL_Rect, &rect));
         }
 
