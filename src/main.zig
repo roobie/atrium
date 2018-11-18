@@ -327,7 +327,6 @@ pub fn main() anyerror!void {
         c.SDL_GetWindowSize(window, @ptrCast(?[*]c_int, &ww), @ptrCast(?[*]c_int, &wh));
 
         // Set render color to blue ( rect will be rendered in this color )
-        _ = c.SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
         var i: u32 =  50;
         while (i > 0) : (i -= 1) {
             var rx = rng.random.uintLessThan(u32, @bitCast(u32, ww) - 50);
@@ -340,6 +339,12 @@ pub fn main() anyerror!void {
                 .w = 50,
                 .h = 50,
             };
+            _ = c.SDL_SetRenderDrawColor(
+                renderer,
+                155 + rng.random.uintLessThan(u8, 100),
+                155 + rng.random.uintLessThan(u8, 100),
+                155 + rng.random.uintLessThan(u8, 100),
+                255);
 
             // Render rect
             _ = c.SDL_RenderFillRect(renderer, @ptrCast(?[*]c.SDL_Rect, &rect));
