@@ -295,6 +295,20 @@ pub fn main() anyerror!void {
         return SDL.logFatal(c"Error initializing (set) framerate controller: %s");
     };
 
+    var game_data = init: {
+        const count = 50;
+        var initial_value: [count]c.SDL_Rect = undefined;
+        for (initial_value) |*rect, i| {
+            rect.* = c.SDL_Rect {
+                .x = 50,
+                .y = 50,
+                .w = 50,
+                .h = 50,
+            };
+        }
+        break :init initial_value[0..];
+    };
+
     var quit = false;
     while (!quit) {
         var event: c.SDL_Event = undefined;
@@ -326,19 +340,13 @@ pub fn main() anyerror!void {
         var wh: c_int = undefined;
         c.SDL_GetWindowSize(window, @ptrCast(?[*]c_int, &ww), @ptrCast(?[*]c_int, &wh));
 
-        // Set render color to blue ( rect will be rendered in this color )
-        var i: u32 =  50;
-        while (i > 0) : (i -= 1) {
-            var rx = rng.random.uintLessThan(u32, @bitCast(u32, ww) - 50);
-            var ry = rng.random.uintLessThan(u32, @bitCast(u32, wh) - 50);
+        const factor = delta / 1000;
+        for (game_data) |rec| {
+            var rect = rec;
+            const dx = rng.random.uintLessThan(u32, 10);
+            (&rect).*.x = rect.x + 1;
+                //@bitCast(c_int, factor * dx);
 
-            // Creat a rect at pos ( 50, 50 ) that's 50 pixels wide and 50 pixels high.
-            var rect = c.SDL_Rect {
-                .x = @bitCast(c_int, rx),
-                .y = @bitCast(c_int, ry),
-                .w = 50,
-                .h = 50,
-            };
             _ = c.SDL_SetRenderDrawColor(
                 renderer,
                 155 + rng.random.uintLessThan(u8, 100),
