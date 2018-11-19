@@ -1,4 +1,4 @@
-
+const mem = @import("std").mem;
 
 pub const c = @cImport({
     @cInclude("lua.h");
@@ -14,3 +14,7 @@ pub const c = @cImport({
     @cInclude("SDL2/SDL_image.h");
     @cInclude("SDL2/SDL_ttf.h");
 });
+
+pub fn str(cstr: ?[*]const u8) []const u8 {
+    return mem.toSliceConst(u8, cstr.?);
+}

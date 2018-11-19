@@ -19,6 +19,7 @@ pub fn build(b: *Builder) void {
     exe.linkSystemLibrary("c");
     exe.linkSystemLibrary("pthread");
     exe.linkSystemLibrary("SDL2");
+    exe.linkSystemLibrary("SDL2_ttf");
     exe.linkSystemLibrary("SDL2_gfx");
 
     exe.addCompileFlags([][] const u8{"-D_REENTRANT"});

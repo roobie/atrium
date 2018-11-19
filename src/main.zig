@@ -12,7 +12,8 @@ const sdl = @import("sdl.zig");
 
 const linalg = @import("linalg.zig");
 
-const c = @import("clibs.zig").c;
+const clibs = @import("clibs.zig");
+const c = clibs.c;
 
 const GameError = error {
     EntityCreationError,
@@ -21,12 +22,29 @@ const GameError = error {
 const windowWidth = 976;
 const windowHeight = 720;
 
+const Camera = struct {
+    position: linalg.Vec2,
+    zoom: linalg.Float,
+};
+
 const Entity = struct {
     id: usize,
     momentum: linalg.Vec2,
     position: linalg.Vec2,
     dimensions: linalg.Vec2,
     base_color: [4]u8,
+
+    pub fn getSpriteT(self: *Entity, transform: *linalg.Vec2, scale: linalg.Float) c.SDL_Rect {
+        const pos = self.position.add(transform);
+        const dim = self.dimensions.scale(scale);
+
+        return c.SDL_Rect {
+            .x = @floatToInt(c_int, pos.x),
+            .y = @floatToInt(c_int, pos.y),
+            .w = @floatToInt(c_int, dim.x),
+            .h = @floatToInt(c_int, dim.y),
+        };
+    }
 
     pub fn getSprite(self: *Entity) c.SDL_Rect {
         //c.SDL_Rect {x: c_int, y: c_int,w: c_int,h: c_int,},
@@ -91,6 +109,11 @@ pub fn main() anyerror!void {
     const seed = mem.readIntLE(u64, buf[0..8]);
     var rng = rand.DefaultPrng.init(seed);
 
+    var camera = Camera {
+        .position = linalg.Vec2.make(0, 0),
+        .zoom = 1.0,
+    };
+    var cameraPtr = &camera;
 
     var entities: [startEntityCount]Entity = undefined;
     var allocator = &std.heap.DirectAllocator.init().allocator;
@@ -105,6 +128,12 @@ pub fn main() anyerror!void {
         return sdl.logFatal(c"Unable to initialize SDL: %s");
     };
     defer c.SDL_Quit();
+
+    sdl.check(c.TTF_Init()) catch |err| {
+        warn("TTF err: {}\n", clibs.str(c.TTF_GetError()));
+        return err;
+    };
+    defer c.TTF_Quit();
 
     const wflags = c.SDL_WINDOW_BORDERLESS
         //|c.SDL_WINDOW_RESIZABLE
@@ -130,10 +159,31 @@ pub fn main() anyerror!void {
     var fpsMan: c.FPSmanager = undefined;
     var fpsManPtr: ?[*]c.FPSmanager = @ptrCast([*]c.FPSmanager, &fpsMan);
     c.SDL_initFramerate(fpsManPtr);
-    const targetFps: u32 = 120;
+    const targetFps: u32 = 200;
     sdl.check(c.SDL_setFramerate(fpsManPtr, targetFps)) catch {
         return sdl.logFatal(c"Error initializing (set) framerate controller: %s");
     };
+
+    var font: *c.TTF_Font = c.TTF_OpenFont(c"assets/DejaVuSansMono.ttf", 16) orelse {
+        // TODO make better
+        warn("{}\n", clibs.str(c.TTF_GetError()));
+        return error.BadValue;
+    };
+
+    // as TTF_RenderText_Solid could only be used on SDL_Surface then you have to
+    // create the surface first
+    // defer destroy
+    var surfaceMessage: ?[*]c.SDL_Surface = c.TTF_RenderText_Solid(
+        font, c"put your text here", c.SDL_Color {.r = 255, .g = 255, .b = 255, .a = 255, });
+    //now you can convert it into a texture
+    var message: *c.SDL_Texture = c.SDL_CreateTextureFromSurface(renderer, surfaceMessage).?;
+
+    var message_rect: c.SDL_Rect = c.SDL_Rect {
+        .x = 20,  //controls the rect's x coordinate 
+        .y = 20,  // controls the rect's y coordinte
+        .w = 300, // controls the width of the rect
+        .h = 20, // controls the height of the rect
+    }; //create a rect
 
     var _x: c_int = 0;
     _ = c.SDL_GL_SetAttribute(@bitCast(c.SDL_GLattr, _x + c.SDL_GL_CONTEXT_FLAGS),
@@ -174,8 +224,53 @@ pub fn main() anyerror!void {
                             quit = true;
                         },
                         c.SDLK_w => {
-                            warn("DELAY: {} || DELTA: {}\n", delay, delta);
-                            warn("EntityCount: {}\n", worldPtr.*.entities.len);
+                            const fr = c.SDL_getFramerate(fpsManPtr);
+                            warn("[Actual delay: {} ; frame delta: {} ; FrameRate: {}]\n",
+                                 delay, delta, fr);
+                            warn("[EntityCount: {}]\n", worldPtr.*.entities.len);
+                        },
+                        c.SDLK_d => {
+                            var e = makeRandomEntity(&rng, worldPtr.*.entities.len + 1);
+                            worldPtr.*.entities.append(e) catch {
+                                return error.EntityCreationError;
+                            };
+                        },
+                        c.SDLK_f => {
+                            if (worldPtr.*.entities.len > 0) {
+                                _ = worldPtr.*.entities.pop();
+                            }
+                        },
+                        c.SDLK_a => {
+                            cameraPtr.*.zoom += 0.1;
+                        },
+                        c.SDLK_z => {
+                            cameraPtr.*.zoom -= 0.1;
+                        },
+                        c.SDLK_s => {
+                            const fr = @bitCast(u32, c.SDL_getFramerate(fpsManPtr));
+                            const v: u32 = 1;
+                            const nv: u32 = fr + v;
+                            _ = c.SDL_setFramerate(fpsManPtr, nv);
+                            warn("New targetFps: {}\n", nv);
+                        },
+                        c.SDLK_x => {
+                            const fr = @bitCast(u32, c.SDL_getFramerate(fpsManPtr));
+                            const v: u32 = 1;
+                            const nv: u32 = fr - v;
+                            _ = c.SDL_setFramerate(fpsManPtr, nv);
+                            warn("New targetFps: {}\n", nv);
+                        },
+                        c.SDLK_UP => {
+                            cameraPtr.*.position.addI(&linalg.Vec2.make(0, 5));
+                        },
+                        c.SDLK_DOWN => {
+                            cameraPtr.*.position.addI(&linalg.Vec2.make(0, -5));
+                        },
+                        c.SDLK_RIGHT => {
+                            cameraPtr.*.position.addI(&linalg.Vec2.make(-5, 0));
+                        },
+                        c.SDLK_LEFT => {
+                            cameraPtr.*.position.addI(&linalg.Vec2.make(5, 0));
                         },
                         else => {},
                     }
@@ -222,16 +317,17 @@ pub fn main() anyerror!void {
             );
 
             // Render rect
-            var rect = entity.getSprite();
+            var rect = entity.getSpriteT(&camera.position, camera.zoom);
             _ = c.SDL_RenderFillRect(renderer, @ptrCast(?[*]c.SDL_Rect, &rect));
         }
 
-        if (rng.random.float(f32) < 0.04) {
+        if (rng.random.float(f32) < 0.001) {
             worldPtr.*.entities.append(makeRandomEntity(&rng, worldPtr.*.entities.len + 1)) catch {
                 return error.EntityCreationError;
             };
         }
 
+        _ = c.SDL_RenderCopy(renderer, message, null, @ptrCast(?[*]c.SDL_Rect, &message_rect));
         c.SDL_RenderPresent(renderer);
 
         delay = c.SDL_GetTicks();
