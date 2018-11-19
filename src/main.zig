@@ -174,15 +174,23 @@ pub fn main() anyerror!void {
     // create the surface first
     // defer destroy
     var surfaceMessage: ?[*]c.SDL_Surface = c.TTF_RenderText_Solid(
-        font, c"put your text here", c.SDL_Color {.r = 255, .g = 255, .b = 255, .a = 255, });
+        font, c"put your text here yasddid aisdfiasdf aisdif as", c.SDL_Color {.r = 255, .g = 255, .b = 255, .a = 255, });
     //now you can convert it into a texture
     var message: *c.SDL_Texture = c.SDL_CreateTextureFromSurface(renderer, surfaceMessage).?;
 
+    var tw: c_int = undefined;
+    var th: c_int = undefined;
+    _ = c.TTF_SizeText(
+        font,
+        c"put your text here yasddid aisdfiasdf aisdif as",
+        @ptrCast(?[*]c_int, &tw),
+        @ptrCast(?[*]c_int, &th),
+    );
     var message_rect: c.SDL_Rect = c.SDL_Rect {
         .x = 20,  //controls the rect's x coordinate 
         .y = 20,  // controls the rect's y coordinte
-        .w = 300, // controls the width of the rect
-        .h = 20, // controls the height of the rect
+        .w = tw, // controls the width of the rect
+        .h = th, // controls the height of the rect
     }; //create a rect
 
     var _x: c_int = 0;
