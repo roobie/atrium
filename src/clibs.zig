@@ -24,6 +24,8 @@ pub const c = @cImport({
     // @cInclude("SDL2/SDL_syswm.h");
 });
 
+pub extern fn KW_CreateFrame(gui: ?*c.KW_GUI, parent: ?*c.KW_Widget, geometry: *const c.KW_Rect) *c.KW_Widget;
+
 pub const CString = [*]const u8;
 pub const String = []const u8;
 

@@ -32,8 +32,6 @@ const random_stuff = @import("random_stuff.zig");
 const logic = @import("logic.zig");
 var window_properties: WindowProperties = undefined;
 
-extern fn KW_CreateFrame(gui: ?*c.KW_GUI, parent: ?*c.KW_Widget, geometry: *const c.KW_Rect) *c.KW_Widget;
-
 pub fn main() anyerror!void {
     var lua = _lua.fullInit();
     defer lua.deinit();
@@ -146,7 +144,7 @@ pub fn main() anyerror!void {
     const frame_geom = c.KW_Rect {
         .x = 10, .y = 10, .w = 100, .h = 100
     };
-    frame = KW_CreateFrame(gui, null, &frame_geom);
+    //frame = clibs.KW_CreateFrame(gui, null, &frame_geom);
 
     var delay: u32 = 0;
     var delta: u32 = 0;
