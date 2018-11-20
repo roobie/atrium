@@ -1,6 +1,4 @@
-[submodule "submodules/linmath.h"]
-	path = submodules/linmath.h
-	url = https://github.com/datenwolf/linmath.h.git
-[submodule "submodules/cimgui"]
-	path = submodules/cimgui
-	url = https://github.com/cimgui/cimgui.git
+
+[submodule "submodules/KiWi"]
+	path = submodules/KiWi
+	url = https://github.com/mobius3/KiWi.git

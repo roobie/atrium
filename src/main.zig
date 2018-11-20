@@ -1,5 +1,6 @@
 const std = @import("std");
 const mem = std.mem;
+const fmt = std.fmt;
 const math = std.math;
 const rand = std.rand;
 const ArrayList = std.ArrayList;
@@ -9,123 +10,93 @@ const warn = @import("std").debug.warn;
 
 const _lua = @import("lua.zig");
 const sdl = @import("sdl.zig");
+// const cimgui = @import("cimgui.zig");
 
 const linalg = @import("linalg.zig");
+const Vec2 = linalg.Vec2;
+const math_ext = @import("math_ext.zig");
 
 const clibs = @import("clibs.zig");
 const c = clibs.c;
 
-const GameError = error {
-    EntityCreationError,
-};
+const common = @import("common.zig");
+const Camera = common.Camera;
+const WindowProperties = common.WindowProperties;
+const inv_y = common.inv_y;
+const entities = @import("entities.zig");
+const Entity = entities.Entity;
+const EntityList = entities.EntityList;
+const World = @import("world.zig").World;
+const random_stuff = @import("random_stuff.zig");
 
-const windowWidth = 976;
-const windowHeight = 720;
+const logic = @import("logic.zig");
+var window_properties: WindowProperties = undefined;
 
-const Camera = struct {
-    position: linalg.Vec2,
-    zoom: linalg.Float,
-};
-
-const Entity = struct {
-    id: usize,
-    momentum: linalg.Vec2,
-    position: linalg.Vec2,
-    dimensions: linalg.Vec2,
-    base_color: [4]u8,
-
-    pub fn getSpriteT(self: *Entity, transform: *linalg.Vec2, scale: linalg.Float) c.SDL_Rect {
-        const pos = self.position.add(transform);
-        const dim = self.dimensions.scale(scale);
-
-        return c.SDL_Rect {
-            .x = @floatToInt(c_int, pos.x),
-            .y = @floatToInt(c_int, pos.y),
-            .w = @floatToInt(c_int, dim.x),
-            .h = @floatToInt(c_int, dim.y),
-        };
-    }
-
-    pub fn getSprite(self: *Entity) c.SDL_Rect {
-        //c.SDL_Rect {x: c_int, y: c_int,w: c_int,h: c_int,},
-        return c.SDL_Rect {
-            .x = @floatToInt(c_int, self.position.x),
-            .y = @floatToInt(c_int, self.position.y),
-            .w = @floatToInt(c_int, self.dimensions.x),
-            .h = @floatToInt(c_int, self.dimensions.y),
-        };
-    }
-};
-
-const EntityList = ArrayList(Entity);
-const World = struct {
-    entities: EntityList,
-};
-
-var e1: Entity = Entity {
-    .momentum = linalg.Vec2.make(100.0, 100.0),
-    .sprite = c.SDL_Rect { .x = 10, .y = 10, .w = 10, .h = 10},
-};
-
-const startEntityCount = 2;
-
-fn makeRandomEntity(rng: *rand.Xoroshiro128, nextId: usize) Entity {
-    return Entity {
-        .id = nextId,
-        .position = linalg.Vec2.make(windowWidth / 2, windowHeight / 2),
-        .dimensions = linalg.Vec2.make(10, 10),
-        .momentum = linalg.Vec2.make(0, 0),
-        .base_color = []u8 {
-            55 + rng.random.uintLessThan(u8, 100),
-            55 + rng.random.uintLessThan(u8, 100),
-            55 + rng.random.uintLessThan(u8, 100),
-            55 + rng.random.uintLessThan(u8, 200),
-        }
-    };
-}
-fn populateEntities(rng: *rand.Xoroshiro128, lst: *EntityList) void {
-    var i: usize = 0;
-    while (i < startEntityCount) : (i += 1) {
-        lst.append(makeRandomEntity(rng, i)) catch return ;
-    }
-}
+extern fn KW_CreateFrame(gui: ?*c.KW_GUI, parent: ?*c.KW_Widget, geometry: *const c.KW_Rect) *c.KW_Widget;
 
 pub fn main() anyerror!void {
-    var lua = _lua.init(null);
+    var lua = _lua.fullInit();
     defer lua.deinit();
 
-    lua.openLibs();
-    lua.setPanicFunc(_lua.luaPrint);
-    lua.registerGlobalFunc(c"print", _lua.luaPrint);
+    // lua.evalString(c"print('Hello from luajit', 1, 2, 'test')") catch {
+    //     std.debug.warn("Error when executing Lua code");
+    // };
 
-    lua.evalString(c"print('Hello from luajit', 1, 2, 'test')") catch {
-        std.debug.warn("Error when executing Lua code");
+    // warn("RANDOM check: {}\n", lua.getRandom());
+    {
+        c.lua_createtable(lua.state, 0, 1 << 4);
+        lua.setField(c.LUA_GLOBALSINDEX, c"atrium");
+    }
+
+    lua.evalFile(c"main.lua") catch {
+        return sdl.logFatalExt(
+            error.GameInitializationFailed,
+            c"File `main.lua` not found or contains syntax errors.");
     };
 
-    warn("RANDOM check: {}\n", lua.getRandom());
+    {
+        const top = lua.getTop();
+        defer lua.setTop(top);
+        lua.getGlobal(c"atrium");
+        lua.getField(top + 1, c"init");
+        lua.call(0, 0);
+    }
 
-    var buf: [8]u8 = undefined;
-    try std.os.getRandomBytes(buf[0..]);
-    const seed = mem.readIntLE(u64, buf[0..8]);
-    var rng = rand.DefaultPrng.init(seed);
+    var rng = common.initRng() catch {
+        return sdl.logFatalExt(
+            error.GameInitializationFailed,
+            c"Random number generator failed to initialize.");
+    };
+
+    window_properties = WindowProperties {
+        .default_width = 1200,
+        .default_height = 720,
+
+        .current_width = undefined,
+        .current_height = undefined,
+
+        .relative_center = Vec2.make(0, 0),
+    };
+
 
     var camera = Camera {
-        .position = linalg.Vec2.make(0, 0),
-        .zoom = 1.0,
+        .position = Vec2.make(0, 0),
+        .scale = 1.0,
+        .center = Vec2.make(0, 0),
+        .rotation = 0.0,
     };
     var cameraPtr = &camera;
 
-    var entities: [startEntityCount]Entity = undefined;
     var allocator = &std.heap.DirectAllocator.init().allocator;
     var world = World {
         .entities = EntityList.init(allocator),
     };
     defer world.entities.deinit();
-    populateEntities(&rng, &world.entities);
+    random_stuff.populateEntities(10, &rng, &world.entities);
     var worldPtr = &world;
 
     sdl.check(c.SDL_Init(c.SDL_INIT_VIDEO|c.SDL_INIT_GAMECONTROLLER)) catch {
-        return sdl.logFatal(c"Unable to initialize SDL: %s");
+        return sdl.logFatal(sdl.Module.SDL, c"Unable to initialize SDL: %s");
     };
     defer c.SDL_Quit();
 
@@ -141,17 +112,41 @@ pub fn main() anyerror!void {
     const window = c.SDL_CreateWindow(
         c"GIZ",
         sdl.SDL_WINDOWPOS_UNDEFINED, sdl.SDL_WINDOWPOS_UNDEFINED,
-        windowWidth, windowHeight,
+        window_properties.default_width, window_properties.default_height,
         wflags)
         orelse {
-            return sdl.logFatal(c"Unable to create window: %s");
+            return sdl.logFatal(sdl.Module.SDL, c"Unable to create window: %s");
     };
     defer c.SDL_DestroyWindow(window);
 
+    var context = c.SDL_GL_CreateContext(window);
+    defer c.SDL_GL_DeleteContext(context);
+
+    //var ig_context = c.igCreateContext(null);
+    //cimgui.SDL2Impl.init(window);
+    //cimgui.GL2Impl.init();
+
     const renderer = c.SDL_CreateRenderer(window, -1, 0) orelse {
-        return sdl.logFatal(c"Unable to create renderer: %s");
+        return sdl.logFatal(sdl.Module.SDL, c"Unable to create renderer: %s");
     };
     defer c.SDL_DestroyRenderer(renderer);
+
+    const driver = c.KW_CreateSDL2RenderDriver(renderer, window);
+    const set = c.KW_LoadSurface(driver, c"assets/tileset.png");
+    const gui = c.KW_Init(driver, set);
+    const font = c.KW_LoadFont(driver, c"assets/DejaVuSansMono.ttf", 12);
+    c.KW_SetFont(gui, font);
+    defer {
+        c.KW_Quit(gui);
+        c.KW_ReleaseFont(driver, font);
+        c.KW_ReleaseSurface(driver, set);
+        c.KW_ReleaseRenderDriver(driver);
+    }
+    var frame: *c.KW_Widget = undefined;
+    const frame_geom = c.KW_Rect {
+        .x = 10, .y = 10, .w = 100, .h = 100
+    };
+    frame = KW_CreateFrame(gui, null, &frame_geom);
 
     var delay: u32 = 0;
     var delta: u32 = 0;
@@ -159,72 +154,61 @@ pub fn main() anyerror!void {
     var fpsMan: c.FPSmanager = undefined;
     var fpsManPtr: ?[*]c.FPSmanager = @ptrCast([*]c.FPSmanager, &fpsMan);
     c.SDL_initFramerate(fpsManPtr);
-    const targetFps: u32 = 200;
+    const targetFps: u32 = 25;
     sdl.check(c.SDL_setFramerate(fpsManPtr, targetFps)) catch {
-        return sdl.logFatal(c"Error initializing (set) framerate controller: %s");
+        return sdl.logFatal(sdl.Module.SDL, c"Error initializing (set) framerate controller: %s");
     };
 
-    var font: *c.TTF_Font = c.TTF_OpenFont(c"assets/DejaVuSansMono.ttf", 16) orelse {
-        // TODO make better
-        warn("{}\n", clibs.str(c.TTF_GetError()));
-        return error.BadValue;
+    sdl.initTextManager() catch |err| {
+        return sdl.logFatal(sdl.Module.TTF, c"Error initTextManager: %s");
     };
 
-    // as TTF_RenderText_Solid could only be used on SDL_Surface then you have to
-    // create the surface first
-    // defer destroy
-    var surfaceMessage: ?[*]c.SDL_Surface = c.TTF_RenderText_Solid(
-        font, c"put your text here yasddid aisdfiasdf aisdif as", c.SDL_Color {.r = 255, .g = 255, .b = 255, .a = 255, });
-    //now you can convert it into a texture
-    var message: *c.SDL_Texture = c.SDL_CreateTextureFromSurface(renderer, surfaceMessage).?;
+    sdl.initSdlGlAttrs() catch |err| {
+        return sdl.logFatal(sdl.Module.SDL, c"Error initSdlGlAttrs: %s");
+    };
 
-    var tw: c_int = undefined;
-    var th: c_int = undefined;
-    _ = c.TTF_SizeText(
-        font,
-        c"put your text here yasddid aisdfiasdf aisdif as",
-        @ptrCast(?[*]c_int, &tw),
-        @ptrCast(?[*]c_int, &th),
-    );
-    var message_rect: c.SDL_Rect = c.SDL_Rect {
-        .x = 20,  //controls the rect's x coordinate 
-        .y = 20,  // controls the rect's y coordinte
-        .w = tw, // controls the width of the rect
-        .h = th, // controls the height of the rect
-    }; //create a rect
+    resized(window, &window_properties);
+    //cameraPtr.*.position.subI(&window_properties.relative_center.mul(&inv_y));
+    cameraPtr.*.center.set(&window_properties.relative_center);
 
-    var _x: c_int = 0;
-    _ = c.SDL_GL_SetAttribute(@bitCast(c.SDL_GLattr, _x + c.SDL_GL_CONTEXT_FLAGS),
-                              c.SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
-    _ = c.SDL_GL_SetAttribute(@bitCast(c.SDL_GLattr, _x + c.SDL_GL_CONTEXT_PROFILE_MASK),
-                              c.SDL_GL_CONTEXT_PROFILE_CORE);
-    _ = c.SDL_GL_SetAttribute(@bitCast(c.SDL_GLattr, _x + c.SDL_GL_DOUBLEBUFFER), 1);
-    _ = c.SDL_GL_SetAttribute(@bitCast(c.SDL_GLattr, _x + c.SDL_GL_DEPTH_SIZE), 24);
-    _ = c.SDL_GL_SetAttribute(@bitCast(c.SDL_GLattr, _x + c.SDL_GL_STENCIL_SIZE), 8);
-    _ = c.SDL_GL_SetAttribute(@bitCast(c.SDL_GLattr, _x + c.SDL_GL_CONTEXT_MAJOR_VERSION), 3);
-    _ = c.SDL_GL_SetAttribute(@bitCast(c.SDL_GLattr, _x + c.SDL_GL_CONTEXT_MINOR_VERSION), 2);
-    _ = c.SDL_GL_SetSwapInterval(1);
+    var message = c"hello from text in SDL2";
+    var t = sdl.Text.init(message);
+    defer t.deinit();
 
-    var ww: c_int = undefined;
-    var wh: c_int = undefined;
-    c.SDL_GetWindowSize(window, @ptrCast(?[*]c_int, &ww), @ptrCast(?[*]c_int, &wh));
+    const sample_size = 1 << 5;
+    var fps_samples: [sample_size]f64 = undefined;
+    mem.set(f64, fps_samples[0..], 1.0);
 
     var quit = false;
+    var pause = false;
     while (!quit) {
+        //quit = true;
         var event: c.SDL_Event = undefined;
         while (sdl.SDL_PollEvent(&event) != 0) {
             switch (event.@"type") {
                 c.SDL_QUIT => {
                     quit = true;
                 },
-                c.SDL_WINDOWEVENT_RESIZED => {
-                    c.SDL_GetWindowSize(window, @ptrCast(?[*]c_int, &ww), @ptrCast(?[*]c_int, &wh));
+                c.SDL_WINDOWEVENT_EXPOSED, c.SDL_WINDOWEVENT_RESIZED => {
+                    resized(window, &window_properties);
                 },
                 c.SDL_MOUSEMOTION => {
-                    warn("Mouse: {}\n", event.motion);
+                    // Mouse: struct_SDL_MouseMotionEvent{ .type = 1024, .timestamp = 19349, .windowID = 2, .which = 0, .state = 0, .x = 446, .y = 263, .xrel = -7, .yrel = -32 }
+
+                    //warn("Mouse: {}\n", event.motion);
                 },
                 c.SDL_MOUSEBUTTONDOWN => {
-                    warn("Mouse: {}\n", event.button);
+                    // Mouse: struct_SDL_MouseButtonEvent{ .type = 1025, .timestamp = 19509, .windowID = 2, .which = 0, .button = 1, .state = 1, .clicks = 1, .padding1 = 1, .x = 437, .y = 219 }
+                    //warn("Mouse: {}\n", event.button);
+                },
+                c.SDL_MOUSEWHEEL => {
+                    // warn("{}\n", event.wheel);
+                    const min_scale: f64 = 0.1;
+                    const curr_scale = cameraPtr.*.scale;
+                    const new_scale = math.max(
+                        min_scale,
+                        curr_scale + 0.1 * @intToFloat(f64, event.wheel.y));
+                    cameraPtr.*.scale = new_scale;
                 },
                 c.SDL_KEYDOWN => {
                     switch (event.key.keysym.@"sym") {
@@ -238,7 +222,7 @@ pub fn main() anyerror!void {
                             warn("[EntityCount: {}]\n", worldPtr.*.entities.len);
                         },
                         c.SDLK_d => {
-                            var e = makeRandomEntity(&rng, worldPtr.*.entities.len + 1);
+                            var e = random_stuff.makeRandomEntity(&rng, worldPtr.*.entities.len + 1);
                             worldPtr.*.entities.append(e) catch {
                                 return error.EntityCreationError;
                             };
@@ -249,10 +233,10 @@ pub fn main() anyerror!void {
                             }
                         },
                         c.SDLK_a => {
-                            cameraPtr.*.zoom += 0.1;
+                            cameraPtr.*.scale += 0.1;
                         },
                         c.SDLK_z => {
-                            cameraPtr.*.zoom -= 0.1;
+                            cameraPtr.*.scale -= 0.1;
                         },
                         c.SDLK_s => {
                             const fr = @bitCast(u32, c.SDL_getFramerate(fpsManPtr));
@@ -268,17 +252,23 @@ pub fn main() anyerror!void {
                             _ = c.SDL_setFramerate(fpsManPtr, nv);
                             warn("New targetFps: {}\n", nv);
                         },
+                        c.SDLK_p => {
+                            warn("Camera: {}\n", camera);
+                        },
+                        c.SDLK_SPACE => {
+                            pause = !pause;
+                        },
                         c.SDLK_UP => {
-                            cameraPtr.*.position.addI(&linalg.Vec2.make(0, 5));
+                            cameraPtr.*.position.addI(&linalg.Vec2.make(0, 50));
                         },
                         c.SDLK_DOWN => {
-                            cameraPtr.*.position.addI(&linalg.Vec2.make(0, -5));
+                            cameraPtr.*.position.addI(&linalg.Vec2.make(0, -50));
                         },
                         c.SDLK_RIGHT => {
-                            cameraPtr.*.position.addI(&linalg.Vec2.make(-5, 0));
+                            cameraPtr.*.position.addI(&linalg.Vec2.make(50, 0));
                         },
                         c.SDLK_LEFT => {
-                            cameraPtr.*.position.addI(&linalg.Vec2.make(5, 0));
+                            cameraPtr.*.position.addI(&linalg.Vec2.make(-50, 0));
                         },
                         else => {},
                     }
@@ -288,55 +278,54 @@ pub fn main() anyerror!void {
         }
 
         // clear color
-        _ = c.SDL_SetRenderDrawColor(renderer, 0, 0x20, 0x60, 0x40);
-        _ = c.SDL_RenderClear(renderer);
+        // _ = c.SDL_SetRenderDrawColor(renderer, 0, 0x20, 0x60, 0x40);
+        // _ = c.SDL_RenderClear(renderer);
 
-        const factor: linalg.Float = @intToFloat(linalg.Float, delta) / 1000.0;
+        c.glClearColor(0, 0.1, 0.2, 1);
+        c.glClear(c.GL_COLOR_BUFFER_BIT);
+
+        const dt: linalg.Float = @intToFloat(linalg.Float, delta) / 1000.0;
         for (worldPtr.*.entities.toSlice()) |*entity, i| {
-            var momentum = &entity.*.momentum;
-            var position = &entity.*.position;
-            var dimensions = &entity.*.dimensions;
+
             var base_color = &entity.*.base_color;
-
-            position.addI(momentum);
-
-            if (rng.random.float(f32) < 0.08) {
-                const xfactor: linalg.Float = if (rng.random.boolean())
-                    @intToFloat(linalg.Float, -1) else 1;
-                const yfactor: linalg.Float = if (rng.random.boolean())
-                    @intToFloat(linalg.Float, -1) else 1;
-                momentum.x = rng.random.float(linalg.Float) *
-                    @intToFloat(linalg.Float, rng.random.uintLessThan(u8, 4)) * xfactor;
-                momentum.y = rng.random.float(linalg.Float) *
-                    @intToFloat(linalg.Float, rng.random.uintLessThan(u8, 4)) * yfactor;
-            } else {
-                if (rng.random.float(f32) < 0.3) {
-                    momentum.x = 0.0;
-                    momentum.y = 0.0;
-                }
+            if (!pause) {
+                // all entity processors here.
+                logic.moveProcessor(entity, dt, &rng);
             }
 
-            _ = c.SDL_SetRenderDrawColor(
-                renderer,
-                base_color.*[0],
-                base_color.*[1],
-                base_color.*[2],
-                base_color.*[3],
-            );
-
-            // Render rect
-            var rect = entity.getSpriteT(&camera.position, camera.zoom);
-            _ = c.SDL_RenderFillRect(renderer, @ptrCast(?[*]c.SDL_Rect, &rect));
+            try entity.render(renderer, &camera);
         }
 
-        if (rng.random.float(f32) < 0.001) {
-            worldPtr.*.entities.append(makeRandomEntity(&rng, worldPtr.*.entities.len + 1)) catch {
-                return error.EntityCreationError;
-            };
+        if (!pause) {
+            try logic.worldProcessor(worldPtr, dt, &rng);
         }
 
-        _ = c.SDL_RenderCopy(renderer, message, null, @ptrCast(?[*]c.SDL_Rect, &message_rect));
-        c.SDL_RenderPresent(renderer);
+        t.render(renderer);
+        t.display(renderer, &Vec2.make(10, 10));
+
+        const frame_count = c.SDL_getFramecount(fpsManPtr);
+        var fps: f64 = 1.0;
+        if (delta > 0) {
+            fps = 1000.0 / @intToFloat(f64, delta);
+        }
+        fps_samples[@intCast(usize, @mod(frame_count, sample_size))] = fps;
+
+        const frame_rate = c.SDL_getFramerate(fpsManPtr);
+        if (@mod(frame_count, frame_rate) == 0) {
+            var msg_buf: [1 << 8]u8 = undefined;
+            const newMessage = try fmt.bufPrint(
+                msg_buf[0..],
+                "Delay: {d2} | Delta: {.3} | avg. FPS: {.0}",
+                delay, dt, math_ext.avg(f64, fps_samples[0..]));
+            var tPtr = &t;
+            tPtr.*.message = @ptrCast([*]const u8, &msg_buf);
+        }
+
+        c.KW_ProcessEvents(gui);
+        c.KW_Paint(gui);
+        //c.SDL_RenderPresent(renderer);
+        c.SDL_GL_SwapWindow(window);
+
 
         delay = c.SDL_GetTicks();
         delta = c.SDL_framerateDelay(fpsManPtr);
@@ -344,6 +333,17 @@ pub fn main() anyerror!void {
     }
 }
 
+fn resized (
+    window: *c.SDL_Window,
+    window_props: *WindowProperties
+) void {
+    c.SDL_GetWindowSize(
+        window,
+        @ptrCast(?[*]c_int, &window_props.*.current_width),
+        @ptrCast(?[*]c_int, &window_props.*.current_height));
+    window_props.*.relative_center.x = @intToFloat(linalg.Float, window_props.*.current_width) / 2.0;
+    window_props.*.relative_center.y = @intToFloat(linalg.Float, window_props.*.current_height) / 2.0;
+}
 
 test "luajit" {
 

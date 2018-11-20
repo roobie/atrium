@@ -1,16 +1,16 @@
 const std = @import("std");
 const mem = std.mem;
 
-const c = @import("clibs.zig").c;
+const console = @import("console.zig");
 
-fn str(cstr: CString) String {
-    return mem.toSliceConst(u8, cstr);
-}
+const clibs = @import("clibs.zig");
+const c = clibs.c;
+const str = clibs.str;
+const String = clibs.String;
+const CString = clibs.CString;
 
 // LUA_API lua_State *(lua_newstate) (lua_Alloc f, void *ud);
 pub const LuaState = *c.struct_lua_State;
-pub const String = []const u8;
-pub const CString = [*]const u8;
 pub const LuaFunction = extern fn(?LuaState) c_int;
 pub const LuaNumber = f64;
 pub const LuaInteger = i64;
@@ -21,6 +21,14 @@ pub fn init(aState: ?LuaState) Lua {
     return Lua {
         .state = aState orelse c.luaL_newstate() orelse unreachable,
     };
+}
+
+pub fn fullInit() Lua {
+    var lua = init(null);
+    lua.openLibs();
+    lua.setPanicFunc(luaPrint);
+    lua.registerGlobalFunc(c"print", luaPrint);
+    return lua;
 }
 
 pub const Lua = struct {
@@ -56,6 +64,23 @@ pub const Lua = struct {
         return lua.getNumber(top + 2);
     }
 
+    /// TODO handle arguments
+    /// TODO handle errors
+    pub fn pcallFuncInGlobalTable(self: *Lua, tableName: CString, funcName: CString) void {
+        const top = lua.getTop();
+        defer lua.setTop(top);
+
+        lua.getGlobal(tableName);
+        if (lua.getType(top + 1) != c.LUA_TTABLE) return;
+        lua.getField(top + 1, funcName);
+        if (lua.getType(top + 2) != c.LUA_TFUNCTION) return;
+        lua.pcall(0, 0); // pops the function being called, along with any args
+    }
+
+    pub fn pcall(self: *Lua, nparams: u32, nresults: u32) void {
+        c.lua_pcall(self.state, @bitCast(c_int, nparams), @bitCast(c_int, nresults));
+    }
+
     pub fn call(self: *Lua, nparams: u32, nresults: u32) void {
         c.lua_call(self.state, @bitCast(c_int, nparams), @bitCast(c_int, nresults));
     }
@@ -64,17 +89,22 @@ pub const Lua = struct {
         c.lua_getfield(self.state, @bitCast(c_int, index), name);
     }
 
+    // extern fn lua_setfield(L: ?*lua_State, idx: c_int, k: ?[*]const u8) void;
+    pub fn setField(self: *Lua, idx: c_int, k: CString) void {
+        c.lua_setfield(self.state, idx, k);
+    }
+
     pub fn getGlobal(self: *Lua, name: CString) void {
         c.lua_getfield(self.state, c.LUA_GLOBALSINDEX, name);
     }
 
+    // #define lua_setglobal(L,s)	lua_setfield(L, LUA_GLOBALSINDEX, (s))
     pub fn setGlobal(self: *Lua, name: CString) void {
         c.lua_setfield(self.state, c.LUA_GLOBALSINDEX, name);
     }
 
     // #define lua_register(L,n,f) (lua_pushcfunction(L, (f)), lua_setglobal(L, (n)))
     // #define lua_pushcfunction(L,f)	lua_pushcclosure(L, (f), 0)
-    // #define lua_setglobal(L,s)	lua_setfield(L, LUA_GLOBALSINDEX, (s))
     pub fn registerGlobalFunc(self: *Lua, name: CString, func: LuaFunction) void {
         c.lua_pushcclosure(self.state, func, 0);
         self.setGlobal(name);
@@ -178,7 +208,7 @@ pub extern fn luaPrint(state: ?LuaState) c_int {
     var i = top - top + 1;
     while (i <= top) : (i += 1) {
         if (lua.getString(i)) |cstr| {
-            std.debug.warn("{}\n", str(cstr));
+            console.printLn("{}", str(cstr));
         }
     }
     return 0;

@@ -5,18 +5,22 @@ pub fn build(b: *Builder) void {
     const exe = b.addExecutable("atrium", "src/main.zig");
     exe.setBuildMode(mode);
 
-    //exe.addLibPath("/usr/lib/x86_64-linux-gnu/");
-
-    //exe.addIncludeDir("./submodules/linmath.h");
-
-    exe.addLibPath("./submodules/cimgui/build/");
-    exe.addIncludeDir("./submodules/cimgui");
-    exe.linkSystemLibrary("cimgui");
-
+    exe.addIncludeDir("/usr/include/SDL2");
     exe.addIncludeDir("/usr/include/luajit-2.0");
     exe.linkSystemLibrary("luajit-5.1");
 
+    exe.addLibPath("./submodules/KiWi/build/src");
+    exe.addIncludeDir("./submodules/KiWi/src");
+    exe.linkSystemLibrary("KiWi");
+
+    exe.addLibPath("/usr/lib/atlas-base/");
+    exe.addIncludeDir("/usr/include/atlas");
+    exe.linkSystemLibrary("cblas");
+
+    exe.addIncludeDir("/usr/include/GL/");
+
     exe.linkSystemLibrary("c");
+    exe.linkSystemLibrary("GL");
     exe.linkSystemLibrary("pthread");
     exe.linkSystemLibrary("SDL2");
     exe.linkSystemLibrary("SDL2_ttf");
