@@ -340,8 +340,8 @@ fn resized (
         window,
         @ptrCast(?[*]c_int, &window_props.*.current_width),
         @ptrCast(?[*]c_int, &window_props.*.current_height));
-    window_props.*.relative_center.x = @intToFloat(linalg.Float, window_props.*.current_width) / 2.0;
-    window_props.*.relative_center.y = @intToFloat(linalg.Float, window_props.*.current_height) / 2.0;
+    window_props.*.relative_center.getX() = @intToFloat(linalg.Float, window_props.*.current_width) / 2.0;
+    window_props.*.relative_center.getY() = @intToFloat(linalg.Float, window_props.*.current_height) / 2.0;
 }
 
 test "luajit" {

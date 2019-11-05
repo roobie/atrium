@@ -23,14 +23,14 @@ pub fn moveProcessor(entity: *Entity, dt: f64, rng: *rand.DefaultPrng) void {
             @intToFloat(linalg.Float, -1) else 1;
         const yfactor: linalg.Float = if (rng.random.boolean())
             @intToFloat(linalg.Float, -1) else 1;
-        momentum.x = rng.random.float(linalg.Float) *
+        momentum.data[0] = rng.random.float(linalg.Float) *
             @intToFloat(linalg.Float, rng.random.uintLessThan(u8, 4)) * xfactor;
-        momentum.y = rng.random.float(linalg.Float) *
+        momentum.data[1] = rng.random.float(linalg.Float) *
             @intToFloat(linalg.Float, rng.random.uintLessThan(u8, 4)) * yfactor;
     } else {
         if (rng.random.float(f32) < 0.3) {
-            momentum.x = 0.0;
-            momentum.y = 0.0;
+            momentum.data[0] = 0.0;
+            momentum.data[1] = 0.0;
         }
     }
 }

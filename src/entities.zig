@@ -47,14 +47,14 @@ pub const Entity = struct {
         const cam_u = Vec2.make(math.cos(cam_rot), math.sin(cam_rot));
         const cam_v = Vec2.make(-math.sin(cam_rot), math.cos(cam_rot));
         const pos_cam = self.position.sub(cam_pos);
-        const pos_px = &cam_u.scale(pos_cam.x).add(&cam_v.scale(pos_cam.y)).scale(cam_scale);
-        const pos_screen = pos_px.mul(&inv_y).add(cam_center);
+        const pos_px = &cam_u.scale(pos_cam.getX()).add(&cam_v.scale(pos_cam.getY())).scale(cam_scale);
+        const pos_screen = pos_px.invY().add(cam_center);
 
         return c.SDL_Rect {
-            .x = @floatToInt(c_int, pos_screen.x),
-            .y = @floatToInt(c_int, pos_screen.y),
-            .w = @floatToInt(c_int, dim.x),
-            .h = @floatToInt(c_int, dim.y),
+            .x = @floatToInt(c_int, pos_screen.getX()),
+            .y = @floatToInt(c_int, pos_screen.getY()),
+            .w = @floatToInt(c_int, dim.getX()),
+            .h = @floatToInt(c_int, dim.getY()),
         };
     }
 

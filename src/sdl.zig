@@ -143,8 +143,8 @@ pub const Text = struct {
         );
 
         return SDLRect {
-            .x = @floatToInt(c_int, pos.x),
-            .y = @floatToInt(c_int, pos.y),
+            .x = @floatToInt(c_int, pos.getX()),
+            .y = @floatToInt(c_int, pos.getY()),
             .w = tw,
             .h = th,
         };
