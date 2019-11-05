@@ -85,7 +85,8 @@ pub fn main() anyerror!void {
     };
     var cameraPtr = &camera;
 
-    var allocator = &std.heap.DirectAllocator.init().allocator;
+    var membuf: [1024]u8 = undefined;
+    var allocator = &std.heap.ThreadSafeFixedBufferAllocator.init(&membuf).allocator;
     var world = World {
         .entities = EntityList.init(allocator),
     };
@@ -313,7 +314,7 @@ pub fn main() anyerror!void {
             var msg_buf: [1 << 8]u8 = undefined;
             const newMessage = try fmt.bufPrint(
                 msg_buf[0..],
-                "Delay: {d2} | Delta: {.3} | avg. FPS: {.0}",
+                "Delay: {} | Delta: {} | avg. FPS: {}",
                 delay, dt, math_ext.avg(f64, fps_samples[0..]));
             var tPtr = &t;
             tPtr.*.message = @ptrCast([*]const u8, &msg_buf);

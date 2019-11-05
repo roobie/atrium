@@ -4,16 +4,17 @@ const debug = std.debug;
 const mem = std.mem;
 const io = std.io;
 const os = std.os;
+const File = std.fs.File;
 
 pub const warn = debug.warn;
 
 // impl copied from std.debug.warn
 
-var stdout_file: os.File = undefined;
-var stdout_file_out_stream: os.File.OutStream = undefined;
+var stdout_file: File = undefined;
+var stdout_file_out_stream: File.OutStream = undefined;
 
 /// TODO multithreaded awareness
-var stdout_stream: ?*io.OutStream(os.File.WriteError) = null;
+var stdout_stream: ?*io.OutStream(File.WriteError) = null;
 var stdout_mutex = std.Mutex.init();
 pub fn print(comptime fmt: []const u8, args: ...) void {
     const held = stdout_mutex.acquire();
@@ -25,7 +26,7 @@ pub fn printLn(comptime fmt: []const u8, args: ...) void {
     print(fmt ++ "\n", args);
 }
 
-pub fn getStdoutStream() !*io.OutStream(os.File.WriteError) {
+pub fn getStdoutStream() !*io.OutStream(File.WriteError) {
     if (stdout_stream) |st| {
         return st;
     } else {

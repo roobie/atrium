@@ -32,8 +32,8 @@ pub const Vec2 = struct {
         // self.*.x += other.x;
         // self.*.y += other.y;
         const N = 2;
-        var y: [N]f64 = []const f64 {self.x, self.y};
-        const x: [N]f64 = []const f64 {other.x, other.y};
+        var y: [N]f64 = [_] Float {self.x, self.y};
+        const x: [N]f64 = [_] Float {other.x, other.y};
         //cblas_daxpy(N: c_int, alpha: f64, X: ?[*]const f64, incX: c_int, Y: ?[*]f64, incY: c_int) void;
         c.cblas_daxpy(2, 1, @ptrCast([*]const f64, &x), 1, @ptrCast([*]f64, &y), 1);
         self.x = y[0];
@@ -48,8 +48,8 @@ pub const Vec2 = struct {
 
     pub fn subI(self: *Vec2, other: *const Vec2) void {
         const N = 2;
-        var y: [N]f64 = []const f64 {self.x, self.y};
-        const x: [N]f64 = []const f64 {-other.x, -other.y};
+        var y: [N]f64 = [_]Float {self.x, self.y};
+        const x: [N]f64 = [_]Float {-other.x, -other.y};
         //cblas_daxpy(N: c_int, alpha: f64, X: ?[*]const f64, incX: c_int, Y: ?[*]f64, incY: c_int) void;
         c.cblas_daxpy(2, 1, @ptrCast([*]const f64, &x), 1, @ptrCast([*]f64, &y), 1);
         self.x = y[0];

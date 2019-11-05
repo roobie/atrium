@@ -31,7 +31,7 @@ pub const Camera = struct {
 
 pub fn initRng() !rand.DefaultPrng {
     var buf: [8]u8 = undefined;
-    try std.os.getRandomBytes(buf[0..]);
-    const seed = mem.readIntLE(u64, buf[0..8]);
+    try std.crypto.randomBytes(buf[0..]);
+    const seed = mem.readIntLittle(u64, &buf);
     return rand.DefaultPrng.init(seed);
 }
